@@ -308,7 +308,7 @@ function computeModularDeadlines(tasks, freeBlocks, taskOrder) {
     // Build ordered list of IDs for this group from taskOrder, then append
     // any tasks not yet in taskOrder at the end
     const groupIds = new Set(groupTasks.map(t => t.id));
-    const ordered = (taskOrder || []).filter(id => groupIds.has(id) || freeMap[id]);
+    const ordered = (taskOrder || []).filter(id => groupIds.has(id));
     const unordered = groupTasks.filter(t => !taskOrder.includes(t.id)).map(t => t.id);
     const fullOrder = [...ordered, ...unordered];
 
