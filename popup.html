@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 340px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      padding: 16px;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      color: #fff;
+    }
+
+    .subtitle {
+      font-size: 11px;
+      color: #888;
+      margin-bottom: 16px;
+    }
+
+    /* --- Minutes saved banner --- */
+    .stats-banner {
+      background: linear-gradient(135deg, #1a3a2a, #0f2a1a);
+      border: 1px solid #2a5a3a;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .stats-banner .label { font-size: 12px; color: #8fc9a3; }
+    .stats-banner .value { font-size: 28px; font-weight: 700; color: #4ade80; }
+    .stats-banner .unit  { font-size: 12px; color: #8fc9a3; }
+
+    /* --- Add task form --- */
+    .add-task {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .add-task input, .add-task button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .add-task input {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #e0e0e0;
+    }
+
+    .add-task input::placeholder { color: #666; }
+    .add-task input:focus { border-color: #4ade80; }
+
+    .row { display: flex; gap: 8px; }
+    .row input { flex: 1; }
+
+    .add-task button {
+      background: #4ade80;
+      color: #0f0f0f;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .add-task button:hover { background: #22c55e; }
+
+    /* --- Task list --- */
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .task-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .task-item {
+      background: #1a1a1a;
+      border: 1px solid #282828;
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .task-item .task-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: #e0e0e0;
+      flex: 1;
+    }
+
+    .task-item .task-due {
+      font-size: 11px;
+      color: #888;
+      margin-right: 10px;
+      white-space: nowrap;
+    }
+
+    .task-item .task-due.urgent { color: #f87171; font-weight: 600; }
+
+    .task-item .delete-btn {
+      background: none;
+      border: none;
+      color: #555;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+
+    .task-item .delete-btn:hover { color: #f87171; }
+
+    .empty-state {
+      text-align: center;
+      color: #555;
+      font-size: 12px;
+      padding: 20px 0;
+    }
+
+    /* --- Toggle --- */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #222;
+    }
+
+    .toggle-row label { font-size: 12px; color: #aaa; }
+
+    .switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: #333;
+      border-radius: 22px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .slider::before {
+      content: "";
+      position: absolute;
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+
+    .switch input:checked + .slider { background: #4ade80; }
+    .switch input:checked + .slider::before { transform: translateX(18px); }
+
+    /* --- Survey panel --- */
+    #survey-panel {
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    #survey-header {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #4ade80;
+    }
+
+    #survey-task-preview {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .survey-q label {
+      display: block;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .survey-opts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .survey-opts button {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 20px;
+      color: #aaa;
+      font-size: 12px;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .survey-opts button:hover { border-color: #4ade80; color: #4ade80; }
+
+    .survey-opts button.selected {
+      background: #1a3a2a;
+      border-color: #4ade80;
+      color: #4ade80;
+      font-weight: 600;
+    }
+
+    #survey-confirm {
+      background: #4ade80;
+      border: none;
+      border-radius: 8px;
+      color: #0f0f0f;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #survey-confirm:hover:not(:disabled) { background: #22c55e; }
+
+    #survey-confirm:disabled {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #555;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <h1>WEBE</h1>
+  <p class="subtitle">Stop scrolling. Start doing.</p>
+
+  <!-- Minutes saved -->
+  <div class="stats-banner">
+    <div>
+      <div class="label">Minutes saved</div>
+      <div class="unit">from doom-scrolling</div>
+    </div>
+    <div class="value" id="minutes-saved">0</div>
+  </div>
+
+  <!-- Add task -->
+  <div class="add-task" id="add-form">
+    <input type="text" id="task-name" placeholder="Task name" />
+    <div class="row">
+      <input type="date" id="task-date" />
+      <input type="time" id="task-time" value="23:59" />
+    </div>
+    <button id="add-btn">+ Add Task</button>
+  </div>
+
+  <!-- Survey panel (shown after clicking Add Task) -->
+  <div id="survey-panel">
+    <div id="survey-header">One sec — tell us about this task</div>
+    <div id="survey-task-preview"></div>
+    <div class="survey-q">
+      <label>How hard is this task?</label>
+      <div class="survey-opts" id="diff-opts">
+        <button data-val="Easy">Easy</button>
+        <button data-val="Medium">Medium</button>
+        <button data-val="Hard">Hard</button>
+        <button data-val="Brutal">Brutal</button>
+      </div>
+    </div>
+    <div class="survey-q">
+      <label>Estimated time to complete?</label>
+      <div class="survey-opts" id="time-opts">
+        <button data-val="15m">15m</button>
+        <button data-val="30m">30m</button>
+        <button data-val="1h">1h</button>
+        <button data-val="2h">2h</button>
+        <button data-val="4h+">4h+</button>
+        <button data-val="All day">All day</button>
+      </div>
+    </div>
+    <button id="survey-confirm" disabled>Lock it in →</button>
+  </div>
+
+  <!-- Task list -->
+  <div class="section-label">Your tasks</div>
+  <div class="task-list" id="task-list"></div>
+
+  <!-- Enable/disable toggle -->
+  <div class="toggle-row">
+    <label>WEBE active</label>
+    <div class="switch">
+      <input type="checkbox" id="toggle-active" checked />
+      <span class="slider"></span>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

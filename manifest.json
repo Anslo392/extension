@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "WEBE - What Even BE productive",
+  "version": "1.0.0",
+  "description": "Interrupts doom-scrolling with task accountability prompts",
+  "permissions": ["storage", "activeTab"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icon48.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.instagram.com/reels/*",
+        "*://*.instagram.com/reels*",
+        "*://*.tiktok.com/*",
+        "*://*.youtube.com/shorts/*",
+        "*://*.youtube.com/shorts"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
