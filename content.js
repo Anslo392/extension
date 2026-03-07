@@ -38,13 +38,19 @@
   let overlayActive  = false;
   let tasks          = [];
   let isActive       = true;
+  let bedtime        = null;
+  let taskOrder      = [];
+  let freeBlocks     = [];
 
   // Load tasks + active state from chrome.storage
 
   function refreshState() {
-    chrome.storage.local.get(['tasks', 'webeActive'], (data) => {
-      tasks    = data.tasks || [];
-      isActive = data.webeActive !== undefined ? data.webeActive : true;
+    chrome.storage.local.get(['tasks', 'webeActive', 'bedtime', 'taskOrder', 'freeBlocks'], (data) => {
+      tasks      = data.tasks      || [];
+      isActive   = data.webeActive !== undefined ? data.webeActive : true;
+      bedtime    = data.bedtime    || null;
+      taskOrder  = data.taskOrder  || [];
+      freeBlocks = data.freeBlocks || [];
       recalcThreshold();
     });
   }
@@ -57,27 +63,29 @@
 
   // Calculate the interrupt threshold N
 
+  const DIFFICULTY_MULT = { Easy: 2.0, Medium: 1.0, Hard: 0.6, Brutal: 0.4 };
+
   function recalcThreshold() {
-    if (tasks.length === 0) {
-      // No tasks → very lenient (basically off but still tracking)
-      threshold = 999;
-      return;
-    }
+    // Bedtime within 1h → interrupt every scroll
+    if (isBedtimeSoon()) { threshold = MIN_SCROLLS; return; }
 
-    // Find the task with the soonest due date
-    const now = Date.now();
-    let soonestHours = Infinity;
+    if (tasks.length === 0) { threshold = 999; return; }
 
-    tasks.forEach(t => {
-      const diff = (new Date(t.due) - now) / (1000 * 60 * 60);
-      if (diff < soonestHours) soonestHours = diff;
+    // Use modular deadlines so same-day tasks don't compete
+    const scheduled = computeModularDeadlines(tasks, freeBlocks, taskOrder);
+
+    let best = null, soonestMs = Infinity;
+    scheduled.forEach(s => {
+      const ms = new Date(s.effectiveDue) - Date.now();
+      if (ms < soonestMs) { soonestMs = ms; best = s; }
     });
 
-    // If already overdue, be maximally aggressive
-    if (soonestHours <= 0) soonestHours = 0;
+    const hoursLeft = Math.max(0, soonestMs / (1000 * 60 * 60));
+    const diffMult  = DIFFICULTY_MULT[best.difficulty] ?? 1.0;
+    const progMult  = 1 + ((best.progress ?? 0) / 100); // 1.0 – 2.0
 
-    // N = max(MIN_SCROLLS, floor(hoursUntilDue / URGENCY_DIVISOR))
-    threshold = Math.max(MIN_SCROLLS, Math.floor(soonestHours / URGENCY_DIVISOR));
+    threshold = Math.max(MIN_SCROLLS,
+      Math.floor(hoursLeft / URGENCY_DIVISOR * diffMult * progMult));
   }
 
   
@@ -113,6 +121,15 @@
     }
   });
 
+  function isBedtimeSoon() {
+    if (!bedtime) return false;
+    const [bh, bm] = bedtime.split(':').map(Number);
+    const now = new Date();
+    const bedMs = new Date(now).setHours(bh, bm, 0, 0);
+    const diffMs = bedMs - now;
+    return diffMs >= 0 && diffMs <= 60 * 60 * 1000;
+  }
+
   // Show the full-screen overlay
 
   function showOverlay() {
@@ -121,19 +138,82 @@
 
     const overlayStartTime = Date.now();
 
-    // Pick the most urgent task to show
-    const now = Date.now();
-    let urgentTask = tasks[0];
-    let soonest = Infinity;
-    tasks.forEach(t => {
-      const diff = new Date(t.due) - now;
-      if (diff < soonest) { soonest = diff; urgentTask = t; }
+    // If bedtime is within 1 hour, show sleep overlay instead
+    if (isBedtimeSoon()) {
+      buildSleepOverlay(overlayStartTime);
+      return;
+    }
+
+    // Pick the task with the soonest modular effective deadline
+    const scheduled = computeModularDeadlines(tasks, freeBlocks, taskOrder);
+    let urgentTask = scheduled[0];
+    let soonestMs = Infinity;
+    scheduled.forEach(s => {
+      const ms = new Date(s.effectiveDue) - Date.now();
+      if (ms < soonestMs) { soonestMs = ms; urgentTask = s; }
     });
 
     // Load lastCheckIn then build overlay
     chrome.storage.local.get(['lastCheckIn'], (data) => {
       const lastCheckIn = data.lastCheckIn || null;
       buildOverlay(urgentTask, lastCheckIn, overlayStartTime);
+    });
+  }
+
+  function buildSleepOverlay(overlayStartTime) {
+    const [bh, bm] = bedtime.split(':').map(Number);
+    const bedStr = `${String(bh).padStart(2,'0')}:${String(bm).padStart(2,'0')}`;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'webe-overlay';
+    overlay.innerHTML = `
+      <div id="webe-card">
+        <div id="webe-logo">WEBE</div>
+        <div id="webe-sleep-icon">&#x1F319;</div>
+        <div id="webe-sleep-title">It's almost bedtime.</div>
+        <div id="webe-sleep-sub">Bedtime is at ${escapeHtml(bedStr)}. Close this tab and wind down.</div>
+        <button id="webe-dismiss">Going to sleep &#x2192;</button>
+      </div>
+    `;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #webe-overlay {
+        position: fixed; inset: 0; z-index: 2147483647;
+        background: rgba(10,5,20,0.95);
+        display: flex; align-items: center; justify-content: center;
+        backdrop-filter: blur(8px);
+        animation: webeFadeIn 0.25s ease;
+      }
+      @keyframes webeFadeIn { from { opacity:0; } to { opacity:1; } }
+      #webe-card {
+        background: #13101f;
+        border: 1px solid #7c3aed;
+        border-radius: 16px;
+        padding: 32px 28px;
+        max-width: 360px; width: 90%;
+        text-align: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #e0e0e0;
+      }
+      #webe-logo { font-size:14px; font-weight:700; letter-spacing:0.1em; color:#a78bfa; margin-bottom:16px; }
+      #webe-sleep-icon { font-size:40px; margin-bottom:12px; }
+      #webe-sleep-title { font-size:20px; font-weight:700; color:#fff; margin-bottom:8px; }
+      #webe-sleep-sub { font-size:13px; color:#999; margin-bottom:24px; }
+      #webe-dismiss {
+        width:100%; padding:12px; border:none; border-radius:10px;
+        background:#7c3aed; color:#fff; font-size:15px; font-weight:600;
+        cursor:pointer; transition:background 0.15s;
+      }
+      #webe-dismiss:hover { background:#6d28d9; }
+    `;
+
+    document.documentElement.appendChild(style);
+    document.documentElement.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+
+    overlay.querySelector('#webe-dismiss').addEventListener('click', () => {
+      dismiss(overlay, style, overlayStartTime);
     });
   }
 
@@ -160,7 +240,7 @@
         ${reminderHtml}
         <div id="webe-prompt">What have you done to get closer to:</div>
         <div id="webe-task-name">${escapeHtml(urgentTask.name)}</div>
-        <div id="webe-due">${formatDue(urgentTask.due)}</div>
+        <div id="webe-due">${formatDue(urgentTask.effectiveDue ? urgentTask.effectiveDue.toISOString() : urgentTask.due)}</div>
         <textarea id="webe-input" placeholder="Type what you've done (or what you'll do next)..." rows="3"></textarea>
         <button id="webe-dismiss">I'm on it →</button>
         <div id="webe-skip">or <span id="webe-skip-link">mark task as done</span></div>
@@ -221,8 +301,9 @@
       }
 
       #webe-due {
-        font-size: 12px;
+        font-size: 14px;
         color: #f87171;
+        font-weight: 700;
         margin-bottom: 20px;
       }
 
@@ -365,6 +446,53 @@
   // self-contained — no imports in content scripts)
   
 
+  const ESTIMATE_HOURS = {
+    '15m': 0.25, '30m': 0.5, '1h': 1, '2h': 2, '4h+': 4, 'All day': 8
+  };
+
+  function computeModularDeadlines(tasks, freeBlocks, taskOrder) {
+    const freeMap = Object.fromEntries((freeBlocks || []).map(b => [b.id, b]));
+    const taskMap = Object.fromEntries(tasks.map(t => [t.id, t]));
+
+    const groups = {};
+    tasks.forEach(t => {
+      const day = t.due.slice(0, 10);
+      if (!groups[day]) groups[day] = [];
+      groups[day].push(t);
+    });
+
+    const result = [];
+
+    Object.values(groups).forEach((groupTasks) => {
+      const deadlineMs = new Date(groupTasks[0].due).getTime();
+
+      const groupIds = new Set(groupTasks.map(t => t.id));
+      const ordered  = (taskOrder || []).filter(id => groupIds.has(id) || freeMap[id]);
+      const unordered = groupTasks.filter(t => !(taskOrder || []).includes(t.id)).map(t => t.id);
+      const fullOrder = [...ordered, ...unordered];
+
+      let cursor = deadlineMs;
+      const effectiveDues = {};
+
+      for (let i = fullOrder.length - 1; i >= 0; i--) {
+        const id = fullOrder[i];
+        if (taskMap[id]) {
+          const t = taskMap[id];
+          effectiveDues[id] = new Date(cursor);
+          cursor -= (ESTIMATE_HOURS[t.estimatedTime] ?? 1) * 60 * 60 * 1000;
+        } else if (freeMap[id]) {
+          cursor -= freeMap[id].durationHours * 60 * 60 * 1000;
+        }
+      }
+
+      groupTasks.forEach(t => {
+        result.push({ ...t, effectiveDue: effectiveDues[t.id] || new Date(t.due) });
+      });
+    });
+
+    return result;
+  }
+
   function escapeHtml(str) {
     const d = document.createElement('span');
     d.textContent = str;
@@ -374,9 +502,17 @@
   function formatDue(dueDateISO) {
     const diff = new Date(dueDateISO) - Date.now();
     const h = Math.max(0, diff / (1000 * 60 * 60));
-    if (h <= 0) return '⚠ OVERDUE';
+    if (h <= 0) return formatOverdue(dueDateISO);
     if (h < 24)  return `${Math.round(h)} hours left`;
     return `${Math.round(h / 24)} days left`;
+  }
+
+  function formatOverdue(dueDateISO) {
+    const overdueMs = Date.now() - new Date(dueDateISO);
+    const totalMin  = Math.floor(overdueMs / 60000);
+    const hh = Math.floor(totalMin / 60);
+    const mm = totalMin % 60;
+    return `-${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   }
 
   function formatTimeAgo(ms) {

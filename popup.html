@@ -149,6 +149,18 @@
 
     .toggle-row label { font-size: 12px; color: #aaa; }
 
+    #bedtime-input {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 12px;
+      padding: 4px 8px;
+      outline: none;
+    }
+
+    #bedtime-input:focus { border-color: #7c3aed; }
+
     .switch {
       position: relative;
       width: 40px;
@@ -180,6 +192,197 @@
 
     .switch input:checked + .slider { background: #4ade80; }
     .switch input:checked + .slider::before { transform: translateX(18px); }
+
+    /* --- Tabs --- */
+    #tab-bar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .tab {
+      flex: 1;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #888;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px 0;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .tab:hover { border-color: #4ade80; color: #4ade80; }
+    .tab.active { background: #1a3a2a; border-color: #4ade80; color: #4ade80; }
+
+    /* --- Schedule tab --- */
+    #tab-schedule { display: none; }
+
+    .sched-row {
+      background: #1a1a1a;
+      border: 1px solid #282828;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+      cursor: grab;
+      transition: border-color 0.15s;
+    }
+
+    .sched-row:active { cursor: grabbing; }
+    .sched-row.drag-over { border-color: #4ade80; }
+
+    .sched-row-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .drag-handle {
+      color: #444;
+      font-size: 14px;
+      cursor: grab;
+      flex-shrink: 0;
+    }
+
+    .sched-name {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 500;
+      color: #e0e0e0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sched-badge {
+      font-size: 11px;
+      color: #888;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .sched-due {
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .sched-due.on-time { color: #4ade80; }
+    .sched-due.overdue { color: #f87171; }
+
+    .sched-progress-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .sched-progress-row input[type="range"] {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      background: #333;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .sched-progress-row input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #4ade80;
+      border-radius: 50%;
+    }
+
+    .sched-pct {
+      font-size: 11px;
+      color: #888;
+      width: 28px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .free-row {
+      background: #111;
+      border: 1px dashed #333;
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: grab;
+    }
+
+    .free-row-label { flex: 1; font-size: 12px; color: #888; }
+    .free-row-dur   { font-size: 11px; color: #666; }
+
+    .free-row .delete-btn {
+      background: none;
+      border: none;
+      color: #444;
+      font-size: 15px;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+    }
+
+    .free-row .delete-btn:hover { color: #f87171; }
+
+    #add-free-block {
+      width: 100%;
+      background: none;
+      border: 1px dashed #333;
+      border-radius: 8px;
+      color: #555;
+      font-size: 12px;
+      padding: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+      margin-top: 4px;
+    }
+
+    #add-free-block:hover { border-color: #4ade80; color: #4ade80; }
+
+    /* Free block mini-form */
+    #free-block-form {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 6px;
+    }
+
+    #free-block-form input[type="text"] {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 12px;
+      padding: 7px 10px;
+      outline: none;
+    }
+
+    #free-block-form input[type="text"]:focus { border-color: #4ade80; }
+
+    #free-confirm {
+      background: #4ade80;
+      border: none;
+      border-radius: 6px;
+      color: #0f0f0f;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px;
+      cursor: pointer;
+    }
 
     /* --- Survey panel --- */
     #survey-panel {
@@ -275,54 +478,83 @@
     <div class="value" id="minutes-saved">0</div>
   </div>
 
-  <!-- Add task -->
-  <div class="add-task" id="add-form">
-    <input type="text" id="task-name" placeholder="Task name" />
-    <div class="row">
-      <input type="date" id="task-date" />
-      <input type="time" id="task-time" value="23:59" />
-    </div>
-    <button id="add-btn">+ Add Task</button>
+  <!-- Tab bar -->
+  <div id="tab-bar">
+    <button class="tab active" data-tab="tasks">Tasks</button>
+    <button class="tab" data-tab="schedule">Schedule</button>
   </div>
 
-  <!-- Survey panel (shown after clicking Add Task) -->
-  <div id="survey-panel">
-    <div id="survey-header">One sec — tell us about this task</div>
-    <div id="survey-task-preview"></div>
-    <div class="survey-q">
-      <label>How hard is this task?</label>
-      <div class="survey-opts" id="diff-opts">
-        <button data-val="Easy">Easy</button>
-        <button data-val="Medium">Medium</button>
-        <button data-val="Hard">Hard</button>
-        <button data-val="Brutal">Brutal</button>
+  <!-- TASKS TAB -->
+  <div id="tab-tasks">
+    <!-- Add task -->
+    <div class="add-task" id="add-form">
+      <input type="text" id="task-name" placeholder="Task name" />
+      <div class="row">
+        <input type="date" id="task-date" />
+        <input type="time" id="task-time" value="23:59" />
       </div>
+      <button id="add-btn">+ Add Task</button>
     </div>
-    <div class="survey-q">
-      <label>Estimated time to complete?</label>
-      <div class="survey-opts" id="time-opts">
-        <button data-val="15m">15m</button>
-        <button data-val="30m">30m</button>
-        <button data-val="1h">1h</button>
-        <button data-val="2h">2h</button>
-        <button data-val="4h+">4h+</button>
-        <button data-val="All day">All day</button>
+
+    <!-- Survey panel (shown after clicking Add Task) -->
+    <div id="survey-panel">
+      <div id="survey-header">One sec — tell us about this task</div>
+      <div id="survey-task-preview"></div>
+      <div class="survey-q">
+        <label>How hard is this task?</label>
+        <div class="survey-opts" id="diff-opts">
+          <button data-val="Easy">Easy</button>
+          <button data-val="Medium">Medium</button>
+          <button data-val="Hard">Hard</button>
+          <button data-val="Brutal">Brutal</button>
+        </div>
       </div>
+      <div class="survey-q">
+        <label>Estimated time to complete?</label>
+        <div class="survey-opts" id="time-opts">
+          <button data-val="15m">15m</button>
+          <button data-val="30m">30m</button>
+          <button data-val="1h">1h</button>
+          <button data-val="2h">2h</button>
+          <button data-val="4h+">4h+</button>
+          <button data-val="All day">All day</button>
+        </div>
+      </div>
+      <button id="survey-confirm" disabled>Lock it in →</button>
     </div>
-    <button id="survey-confirm" disabled>Lock it in →</button>
+
+    <!-- Task list -->
+    <div class="section-label">Your tasks</div>
+    <div class="task-list" id="task-list"></div>
   </div>
 
-  <!-- Task list -->
-  <div class="section-label">Your tasks</div>
-  <div class="task-list" id="task-list"></div>
+  <!-- SCHEDULE TAB -->
+  <div id="tab-schedule">
+    <div id="schedule-list"></div>
+    <button id="add-free-block">+ Add free time</button>
+    <div id="free-block-form">
+      <input type="text" id="free-label" placeholder="Label (e.g. Lunch)" maxlength="30" />
+      <div class="survey-opts" id="free-dur-opts">
+        <button data-val="0.25">15m</button>
+        <button data-val="0.5">30m</button>
+        <button data-val="1">1h</button>
+        <button data-val="2">2h</button>
+      </div>
+      <button id="free-confirm" disabled>Add block</button>
+    </div>
+  </div>
 
-  <!-- Enable/disable toggle -->
+  <!-- Enable/disable toggle + bedtime -->
   <div class="toggle-row">
     <label>WEBE active</label>
     <div class="switch">
       <input type="checkbox" id="toggle-active" checked />
       <span class="slider"></span>
     </div>
+  </div>
+  <div class="toggle-row">
+    <label>Bedtime</label>
+    <input type="time" id="bedtime-input" value="23:00" />
   </div>
 
   <script src="popup.js"></script>
