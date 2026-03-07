@@ -272,40 +272,23 @@
     .sched-due.on-time { color: #4ade80; }
     .sched-due.overdue { color: #f87171; }
 
-    .sched-progress-row {
+    .progress-bar {
       display: flex;
-      align-items: center;
-      gap: 8px;
+      gap: 3px;
       margin-top: 8px;
     }
 
-    .sched-progress-row input[type="range"] {
+    .pb-seg {
       flex: 1;
-      -webkit-appearance: none;
-      appearance: none;
-      height: 4px;
+      height: 6px;
       background: #333;
       border-radius: 2px;
-      outline: none;
       cursor: pointer;
+      transition: background 0.1s;
     }
 
-    .sched-progress-row input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      background: #4ade80;
-      border-radius: 50%;
-    }
-
-    .sched-pct {
-      font-size: 11px;
-      color: #888;
-      width: 28px;
-      text-align: right;
-      flex-shrink: 0;
-    }
+    .pb-seg.filled { background: #4ade80; }
+    .pb-seg:hover  { background: #22c55e; }
 
     .free-row {
       background: #111;
@@ -547,10 +530,10 @@
   <!-- Enable/disable toggle + bedtime -->
   <div class="toggle-row">
     <label>WEBE active</label>
-    <div class="switch">
+    <label class="switch">
       <input type="checkbox" id="toggle-active" checked />
       <span class="slider"></span>
-    </div>
+    </label>
   </div>
   <div class="toggle-row">
     <label>Bedtime</label>

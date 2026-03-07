@@ -32,7 +32,6 @@
   const SCROLL_COOLDOWN  = 400; // ms — debounce so one "flick" = one scroll count
 
   // state
-  let scrollCount    = 0;
   let threshold      = 10;      // default if no tasks exist (rarely interrupts)
   let lastScrollTime = 0;
   let overlayActive  = false;
@@ -42,17 +41,34 @@
   let taskOrder      = [];
   let freeBlocks     = [];
 
+  // surface-aware scroll state
+  let currentSurface       = null;           // 'reels' | 'shorts' | 'home' | 'other'
+  const scrollCountBySurface = {};           // per-surface scroll counter
+  let sessionScrollCount   = 0;             // total scrolls this session (for hard cap)
+
+  // first-run / watch-limit state
+  let watchLimit   = null;   // user's preferred reel/minute cap
+  let watchUnit    = 'count'; // 'count' | 'minutes'
+  let firstRunDone = false;
+
   // Load tasks + active state from chrome.storage
 
   function refreshState() {
-    chrome.storage.local.get(['tasks', 'webeActive', 'bedtime', 'taskOrder', 'freeBlocks'], (data) => {
-      tasks      = data.tasks      || [];
-      isActive   = data.webeActive !== undefined ? data.webeActive : true;
-      bedtime    = data.bedtime    || null;
-      taskOrder  = data.taskOrder  || [];
-      freeBlocks = data.freeBlocks || [];
-      recalcThreshold();
-    });
+    chrome.storage.local.get(
+      ['tasks', 'webeActive', 'bedtime', 'taskOrder', 'freeBlocks',
+       'watchLimit', 'watchUnit', 'firstRunDone'],
+      (data) => {
+        tasks        = data.tasks      || [];
+        isActive     = data.webeActive !== undefined ? data.webeActive : true;
+        bedtime      = data.bedtime    || null;
+        taskOrder    = data.taskOrder  || [];
+        freeBlocks   = data.freeBlocks || [];
+        watchLimit   = data.watchLimit ?? null;
+        watchUnit    = data.watchUnit  || 'count';
+        firstRunDone = !!data.firstRunDone;
+        recalcThreshold();
+      }
+    );
   }
 
   // Recalculate whenever storage changes (user adds/removes a task in popup)
@@ -61,13 +77,79 @@
   // Initial load
   refreshState();
 
+  // ---------- Surface detection ----------
+
+  function getSurfaceFromUrl(urlStr) {
+    try {
+      const u    = new URL(urlStr, location.origin);
+      const p    = u.pathname + (u.search || '') + (u.hash || '');
+      const host = u.hostname;
+
+      if (host.includes('youtube.com') && p.includes('/shorts'))                    return 'shorts';
+      if (host.includes('tiktok.com')  && (/\/video\/|\/v\//).test(p))             return 'shorts';
+      if (host.includes('vm.tiktok.com'))                                           return 'shorts';
+      if (host.includes('instagram.com') && (/\/reel|\/reels\//).test(p))          return 'reels';
+
+      // Home / feed pages — tracked separately but not interrupted
+      if (host.includes('youtube.com')  && (p === '/' || p.startsWith('/feed') || p.startsWith('/results'))) return 'home';
+      if (host.includes('instagram.com') && (p === '/' || p.startsWith('/explore')))                         return 'home';
+      if (host.includes('tiktok.com')   && (p === '/' || p.includes('/for-you') || p.includes('/foryou')))   return 'home';
+
+      return 'other';
+    } catch (_) {
+      return 'other';
+    }
+  }
+
+  // SPA navigation hook — fires a synthetic 'locationchange' on any history mutation
+  (function installLocationChangeHook() {
+    const wrap = (type) => {
+      const orig = history[type];
+      return function () {
+        const ret = orig.apply(this, arguments);
+        window.dispatchEvent(new Event('locationchange'));
+        return ret;
+      };
+    };
+    history.pushState    = wrap('pushState');
+    history.replaceState = wrap('replaceState');
+    window.addEventListener('popstate',    () => window.dispatchEvent(new Event('locationchange')));
+    window.addEventListener('hashchange',  () => window.dispatchEvent(new Event('locationchange')));
+  })();
+
+  function handleUrlChange() {
+    const newSurface = getSurfaceFromUrl(location.href);
+    if (newSurface !== currentSurface) onSurfaceChange(newSurface);
+  }
+
+  function onSurfaceChange(newSurface) {
+    currentSurface = newSurface;
+    if (!scrollCountBySurface[newSurface]) scrollCountBySurface[newSurface] = 0;
+    scrollCountBySurface[newSurface] = 0;
+    sessionScrollCount = 0;
+    recalcThreshold();
+
+    // Show first-run prompt on first reels/shorts visit
+    if (!firstRunDone && (newSurface === 'reels' || newSurface === 'shorts')) {
+      showFirstRunPrompt();
+    }
+  }
+
+  // Detect surface immediately, then track SPA navigations
+  handleUrlChange();
+  window.addEventListener('locationchange', handleUrlChange);
+
   // Calculate the interrupt threshold N
 
   const DIFFICULTY_MULT = { Easy: 2.0, Medium: 1.0, Hard: 0.6, Brutal: 0.4 };
 
   function recalcThreshold() {
-    // Bedtime within 1h → interrupt every scroll
-    if (isBedtimeSoon()) { threshold = MIN_SCROLLS; return; }
+    const sleepState = getSleepState();
+    // Any sleep-aware state → interrupt aggressively
+    if (sleepState !== 'none' && sleepState !== 'normal' && sleepState !== 'morning') {
+      threshold = MIN_SCROLLS;
+      return;
+    }
 
     if (tasks.length === 0) { threshold = 999; return; }
 
@@ -98,14 +180,26 @@
   function onScroll() {
     if (!isActive || overlayActive) return;
 
+    // Only intercept reels/shorts — ignore home feed and other surfaces
+    if (currentSurface !== 'reels' && currentSurface !== 'shorts') return;
+
     const now = Date.now();
     if (now - lastScrollTime < SCROLL_COOLDOWN) return;
     lastScrollTime = now;
 
-    scrollCount++;
+    scrollCountBySurface[currentSurface] = (scrollCountBySurface[currentSurface] || 0) + 1;
+    sessionScrollCount++;
 
-    if (scrollCount >= threshold) {
-      scrollCount = 0;
+    // Hard session cap check (runs before normal interrupt threshold)
+    const cap = computeSessionCap();
+    if (cap !== null && sessionScrollCount >= cap) {
+      sessionScrollCount = 0; // reset so it doesn't re-trigger every scroll
+      showHardBlock();
+      return;
+    }
+
+    if (scrollCountBySurface[currentSurface] >= threshold) {
+      scrollCountBySurface[currentSurface] = 0;
       recalcThreshold(); // recalc in case time has passed
       showOverlay();
     }
@@ -121,13 +215,22 @@
     }
   });
 
-  function isBedtimeSoon() {
-    if (!bedtime) return false;
+  function getSleepState() {
+    if (!bedtime) return 'none';
+
     const [bh, bm] = bedtime.split(':').map(Number);
     const now = new Date();
-    const bedMs = new Date(now).setHours(bh, bm, 0, 0);
-    const diffMs = bedMs - now;
-    return diffMs >= 0 && diffMs <= 60 * 60 * 1000;
+    const bed = new Date(now);
+    bed.setHours(bh, bm, 0, 0);
+
+    const diff = now - bed; // ms after bedtime (negative = before bedtime)
+
+    if (diff < -3600000)      return 'normal';
+    if (diff < 0)             return 'winddown';
+    if (diff <= 3600000)      return 'bedtime';
+    if (diff <= 3 * 3600000)  return 'late';
+    if (diff <= 9 * 3600000)  return 'allnighter';
+    return 'morning';
   }
 
   // Show the full-screen overlay
@@ -138,9 +241,16 @@
 
     const overlayStartTime = Date.now();
 
-    // If bedtime is within 1 hour, show sleep overlay instead
-    if (isBedtimeSoon()) {
-      buildSleepOverlay(overlayStartTime);
+    // Show sleep overlay for any sleep-aware state
+    const sleepState = getSleepState();
+    if (sleepState !== 'none' && sleepState !== 'normal' && sleepState !== 'morning') {
+      buildSleepOverlay(overlayStartTime, sleepState);
+      return;
+    }
+
+    // No tasks → nothing to show; reset and bail
+    if (tasks.length === 0) {
+      overlayActive = false;
       return;
     }
 
@@ -160,19 +270,176 @@
     });
   }
 
-  function buildSleepOverlay(overlayStartTime) {
-    const [bh, bm] = bedtime.split(':').map(Number);
-    const bedStr = `${String(bh).padStart(2,'0')}:${String(bm).padStart(2,'0')}`;
+  // ---------- First-run prompt ----------
+
+  function showFirstRunPrompt() {
+    if (overlayActive) return;
+    overlayActive = true;
 
     const overlay = document.createElement('div');
     overlay.id = 'webe-overlay';
     overlay.innerHTML = `
       <div id="webe-card">
         <div id="webe-logo">WEBE</div>
-        <div id="webe-sleep-icon">&#x1F319;</div>
-        <div id="webe-sleep-title">It's almost bedtime.</div>
-        <div id="webe-sleep-sub">Bedtime is at ${escapeHtml(bedStr)}. Close this tab and wind down.</div>
-        <button id="webe-dismiss">Going to sleep &#x2192;</button>
+        <div id="webe-prompt" style="font-size:18px;font-weight:700;color:#fff;margin-bottom:8px;">
+          How many reels do you want to watch?
+        </div>
+        <div id="webe-first-sub">Set a soft limit. WEBE will cut you off when the math says you've had enough.</div>
+        <div id="webe-first-row">
+          <input id="webe-first-count" type="number" min="1" step="1" placeholder="e.g. 10" />
+          <select id="webe-first-unit">
+            <option value="count">reels</option>
+            <option value="minutes">minutes</option>
+          </select>
+        </div>
+        <button id="webe-dismiss">Save &amp; Start</button>
+      </div>
+    `;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #webe-overlay { position:fixed; inset:0; z-index:2147483647; background:rgba(0,0,0,0.92); display:flex; align-items:center; justify-content:center; backdrop-filter:blur(8px); animation:webeFadeIn 0.25s ease; }
+      @keyframes webeFadeIn { from{opacity:0} to{opacity:1} }
+      #webe-card { background:#1a1a1a; border:1px solid #333; border-radius:16px; padding:32px 28px; max-width:380px; width:90%; text-align:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; color:#e0e0e0; }
+      #webe-logo { font-size:14px; font-weight:700; letter-spacing:0.1em; color:#4ade80; margin-bottom:20px; }
+      #webe-first-sub { font-size:13px; color:#888; margin-bottom:20px; }
+      #webe-first-row { display:flex; gap:8px; margin-bottom:20px; }
+      #webe-first-count { flex:1; padding:10px; border-radius:8px; border:1px solid #333; background:#111; color:#e0e0e0; font-size:15px; outline:none; }
+      #webe-first-count:focus { border-color:#4ade80; }
+      #webe-first-unit { padding:10px; border-radius:8px; border:1px solid #333; background:#111; color:#e0e0e0; font-size:15px; cursor:pointer; }
+      #webe-dismiss { width:100%; padding:12px; border:none; border-radius:10px; background:#4ade80; color:#0f0f0f; font-size:15px; font-weight:600; cursor:pointer; transition:background 0.15s; }
+      #webe-dismiss:hover { background:#22c55e; }
+    `;
+
+    document.documentElement.appendChild(style);
+    document.documentElement.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+
+    overlay.querySelector('#webe-dismiss').addEventListener('click', () => {
+      const val  = Number(overlay.querySelector('#webe-first-count').value || 0);
+      const unit = overlay.querySelector('#webe-first-unit').value;
+      if (!val || val <= 0) {
+        overlay.querySelector('#webe-first-count').style.borderColor = '#f87171';
+        return;
+      }
+      watchLimit   = val;
+      watchUnit    = unit;
+      firstRunDone = true;
+      chrome.storage.local.set({ watchLimit: val, watchUnit: unit, firstRunDone: true });
+      overlay.remove();
+      style.remove();
+      document.body.style.overflow = '';
+      overlayActive = false;
+    });
+  }
+
+  // ---------- Session cap ----------
+
+  function computeSessionCap() {
+    if (!watchLimit) return null;
+    if (tasks.length === 0) return null;
+
+    // Convert user preference to scroll count
+    const userCap = watchUnit === 'minutes' ? Math.floor(watchLimit * 2) : watchLimit;
+
+    // Compute logical max from task urgency (soonest effective due)
+    const scheduled = computeModularDeadlines(tasks, freeBlocks, taskOrder);
+    let best = null, soonestMs = Infinity;
+    scheduled.forEach(s => {
+      const ms = new Date(s.effectiveDue) - Date.now();
+      if (ms < soonestMs) { soonestMs = ms; best = s; }
+    });
+
+    if (!best) return userCap;
+
+    const hoursLeft      = Math.max(0, soonestMs / 3600000);
+    const estimatedHours = ESTIMATE_HOURS[best.estimatedTime] ?? 1;
+    const slackHours     = Math.max(0, hoursLeft - estimatedHours);
+    const leisureMinutes = slackHours * 60 * 0.25;
+    const logicalMax     = Math.max(1, Math.floor(leisureMinutes * 2)); // min 1 so cap always applies
+
+    return Math.min(userCap, logicalMax);
+  }
+
+  function showHardBlock() {
+    if (overlayActive) return;
+    overlayActive = true;
+
+    // Build context string from soonest task
+    const scheduled = computeModularDeadlines(tasks, freeBlocks, taskOrder);
+    let urgentTask = null, soonestMs = Infinity;
+    scheduled.forEach(s => {
+      const ms = new Date(s.effectiveDue) - Date.now();
+      if (ms < soonestMs) { soonestMs = ms; urgentTask = s; }
+    });
+
+    const userCapStr = watchUnit === 'minutes' ? `${watchLimit} minutes` : `${watchLimit} reels`;
+    const cap        = computeSessionCap();
+    const logicalStr = cap !== null ? `${cap} reels` : '?';
+    const taskCtx    = urgentTask
+      ? `based on <strong>${escapeHtml(urgentTask.name)}</strong> due in ${Math.round(soonestMs / 3600000)}h`
+      : 'given your upcoming tasks';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'webe-overlay';
+    overlay.innerHTML = `
+      <div id="webe-card">
+        <div id="webe-logo">WEBE</div>
+        <div id="webe-sleep-icon">&#x1F6D1;</div>
+        <div id="webe-sleep-title">Session limit reached.</div>
+        <div id="webe-sleep-sub">
+          You set <strong>${escapeHtml(userCapStr)}</strong>.
+          WEBE calculated you can afford ${logicalStr} ${taskCtx}.
+        </div>
+        <div id="webe-hard-cta">Close this tab to continue working.</div>
+      </div>
+    `;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #webe-overlay { position:fixed; inset:0; z-index:2147483647; background:rgba(20,0,0,0.97); display:flex; align-items:center; justify-content:center; backdrop-filter:blur(8px); animation:webeFadeIn 0.25s ease; }
+      @keyframes webeFadeIn { from{opacity:0} to{opacity:1} }
+      #webe-card { background:#160a0a; border:1px solid #dc2626; border-radius:16px; padding:32px 28px; max-width:360px; width:90%; text-align:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; color:#e0e0e0; }
+      #webe-logo { font-size:14px; font-weight:700; letter-spacing:0.1em; color:#f87171; margin-bottom:16px; }
+      #webe-sleep-icon { font-size:40px; margin-bottom:12px; }
+      #webe-sleep-title { font-size:20px; font-weight:700; color:#fff; margin-bottom:8px; }
+      #webe-sleep-sub { font-size:13px; color:#ccc; margin-bottom:20px; line-height:1.5; }
+      #webe-hard-cta { font-size:15px; font-weight:700; color:#f87171; padding:14px; border:1px solid #dc2626; border-radius:10px; }
+    `;
+
+    document.documentElement.appendChild(style);
+    document.documentElement.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+    // No dismiss handler — intentionally blocks until tab is closed
+  }
+
+  function buildSleepOverlay(overlayStartTime, sleepState) {
+    const [bh, bm] = bedtime.split(':').map(Number);
+    const bedStr = `${String(bh).padStart(2,'0')}:${String(bm).padStart(2,'0')}`;
+
+    const now = new Date();
+    const bed = new Date(now);
+    bed.setHours(bh, bm, 0, 0);
+    const hoursOver = Math.floor((now - bed) / 3600000);
+
+    const SLEEP_CONTENT = {
+      winddown:   { icon: '&#x1F319;', title: 'Wind-down time.',       sub: `Bedtime is at ${escapeHtml(bedStr)}. Close this tab and start winding down.`, btn: 'Winding down &#x2192;' },
+      bedtime:    { icon: '&#x1F319;', title: "It's bedtime.",          sub: `You set bedtime at ${escapeHtml(bedStr)}. Time to sleep.`,                     btn: 'Going to sleep &#x2192;' },
+      late:       { icon: '&#x1F62A;', title: "You're up late.",        sub: `It's ${hoursOver}h past your bedtime. Sleep debt compounds fast.`,             btn: 'Going to sleep now &#x2192;' },
+      allnighter: { icon: '&#x1F635;', title: "All-nighter alert.",     sub: `It's been ${hoursOver}h since your bedtime. This is hurting your focus.`,      btn: 'Okay, going to sleep &#x2192;' },
+    };
+
+    const c = SLEEP_CONTENT[sleepState] || SLEEP_CONTENT.bedtime;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'webe-overlay';
+    overlay.innerHTML = `
+      <div id="webe-card">
+        <div id="webe-logo">WEBE</div>
+        <div id="webe-sleep-icon">${c.icon}</div>
+        <div id="webe-sleep-title">${c.title}</div>
+        <div id="webe-sleep-sub">${c.sub}</div>
+        <button id="webe-dismiss">${c.btn}</button>
       </div>
     `;
 
@@ -467,7 +734,7 @@
       const deadlineMs = new Date(groupTasks[0].due).getTime();
 
       const groupIds = new Set(groupTasks.map(t => t.id));
-      const ordered  = (taskOrder || []).filter(id => groupIds.has(id) || freeMap[id]);
+      const ordered  = (taskOrder || []).filter(id => groupIds.has(id));
       const unordered = groupTasks.filter(t => !(taskOrder || []).includes(t.id)).map(t => t.id);
       const fullOrder = [...ordered, ...unordered];
 

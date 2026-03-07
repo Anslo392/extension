@@ -133,16 +133,20 @@ async function saveScheduleState() {
 
 // ---------- schedule rendering ----------
 
-function formatModularDue(effectiveDue) {
-  const diff = effectiveDue - Date.now();
-  if (diff <= 0) {
-    const totalMin = Math.floor(-diff / 60000);
+function formatModularDue(effectiveDue, estimatedHours) {
+  const leftMs    = effectiveDue - Date.now();
+  const deficitMs = leftMs - (estimatedHours * 3600000);
+
+  if (deficitMs < 0) {
+    // Not enough time left to complete the task (Y - X < 0)
+    const totalMin = Math.floor(-deficitMs / 60000);
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
     return { text: `-${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`, cls: 'overdue' };
   }
-  const h = Math.floor(diff / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
+
+  const h = Math.floor(leftMs / 3600000);
+  const m = Math.floor((leftMs % 3600000) / 60000);
   return { text: `due ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`, cls: 'on-time' };
 }
 
@@ -170,7 +174,8 @@ function renderSchedule(tasks) {
     let row;
     if (taskMap[id]) {
       const s = schedMap[id] || taskMap[id];
-      const due = formatModularDue(s.effectiveDue || new Date(s.due));
+      const estimatedHours = ESTIMATE_HOURS[s.estimatedTime] ?? 1;
+      const due = formatModularDue(s.effectiveDue || new Date(s.due), estimatedHours);
       const pct = s.progress ?? 0;
       const durLabel = s.estimatedTime || '?';
 
@@ -178,6 +183,10 @@ function renderSchedule(tasks) {
       row.className = 'sched-row';
       row.draggable = true;
       row.dataset.id = id;
+      const segs = [1,2,3,4,5,6,7,8,9,10].map(n =>
+        `<span class="pb-seg${(pct / 10) >= n ? ' filled' : ''}" data-n="${n}"></span>`
+      ).join('');
+
       row.innerHTML = `
         <div class="sched-row-top">
           <span class="drag-handle">&#9776;</span>
@@ -185,10 +194,7 @@ function renderSchedule(tasks) {
           <span class="sched-badge">${escapeHtml(durLabel)}</span>
           <span class="sched-due ${due.cls}">${escapeHtml(due.text)}</span>
         </div>
-        <div class="sched-progress-row">
-          <input type="range" min="0" max="100" value="${pct}" data-id="${id}" />
-          <span class="sched-pct">${pct}%</span>
-        </div>
+        <div class="progress-bar" data-id="${id}">${segs}</div>
       `;
     } else if (freeMap[id]) {
       const b = freeMap[id];
@@ -237,17 +243,24 @@ function renderSchedule(tasks) {
     scheduleListEl.appendChild(row);
   });
 
-  // Wire up progress sliders
-  scheduleListEl.querySelectorAll('input[type="range"]').forEach(slider => {
-    const pctEl = slider.nextElementSibling;
-    slider.addEventListener('input', () => {
-      pctEl.textContent = `${slider.value}%`;
-    });
-    slider.addEventListener('change', async () => {
-      const t = tasks.find(t => t.id === slider.dataset.id);
+  // Wire up 10-segment progress bars
+  scheduleListEl.querySelectorAll('.progress-bar').forEach(bar => {
+    bar.addEventListener('click', async (e) => {
+      const seg = e.target.closest('.pb-seg');
+      if (!seg) return;
+      const n = Number(seg.dataset.n);
+      const taskId = bar.dataset.id;
+      const t = tasks.find(t => t.id === taskId);
       if (!t) return;
-      t.progress = Number(slider.value);
-      await saveTasks(tasks);
+
+      if (n === 10) {
+        await deleteTask(taskId);
+      } else {
+        t.progress = n * 10;
+        await saveTasks(tasks);
+        renderSchedule(tasks);
+        renderTasks(tasks);
+      }
     });
   });
 
@@ -295,7 +308,7 @@ function computeModularDeadlines(tasks, freeBlocks, taskOrder) {
     // Build ordered list of IDs for this group from taskOrder, then append
     // any tasks not yet in taskOrder at the end
     const groupIds = new Set(groupTasks.map(t => t.id));
-    const ordered = (taskOrder || []).filter(id => groupIds.has(id) || freeMap[id]);
+    const ordered = (taskOrder || []).filter(id => groupIds.has(id));
     const unordered = groupTasks.filter(t => !taskOrder.includes(t.id)).map(t => t.id);
     const fullOrder = [...ordered, ...unordered];
 
@@ -411,9 +424,11 @@ async function deleteTask(id) {
   // Set toggle state
   toggleActive.checked = await loadActive();
 
-  // Load bedtime
-  const { bedtime } = await chrome.storage.local.get(['bedtime']);
-  if (bedtime) bedtimeInput.value = bedtime;
+  // Load bedtime — always persist so content.js can read it
+  const { bedtime: savedBedtime } = await chrome.storage.local.get(['bedtime']);
+  const bedtimeVal = savedBedtime || '23:00';
+  bedtimeInput.value = bedtimeVal;
+  if (!savedBedtime) chrome.storage.local.set({ bedtime: bedtimeVal });
 })();
 
 // ---------- tab switching ----------
