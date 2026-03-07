@@ -42,6 +42,27 @@
   let taskOrder      = [];
   let freeBlocks     = [];
 
+    // --- Detect navigation changes (YouTube Shorts / TikTok style SPAs) ---
+  let lastUrl = location.href;
+
+  function handleNavigation() {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+
+      // Reset scroll counter for the new video
+      scrollCount = 0;
+
+      // Recalculate urgency
+      recalcThreshold();
+    }
+  }
+
+  // YouTube SPA navigation event
+  document.addEventListener('yt-navigate-finish', handleNavigation);
+
+  // fallback for other platforms
+  setInterval(handleNavigation, 500);
+
   // Load tasks + active state from chrome.storage
 
   function refreshState() {

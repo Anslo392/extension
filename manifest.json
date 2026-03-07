@@ -19,8 +19,7 @@
         "*://*.instagram.com/reels/*",
         "*://*.instagram.com/reels*",
         "*://*.tiktok.com/*",
-        "*://*.youtube.com/shorts/*",
-        "*://*.youtube.com/shorts"
+        "*://*.youtube.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
