@@ -16,14 +16,12 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.instagram.com/reels/*",
-        "*://*.instagram.com/reels*",
+        "*://*.instagram.com/*",
         "*://*.tiktok.com/*",
-        "*://*.youtube.com/shorts/*",
-        "*://*.youtube.com/shorts"
+        "*://*.youtube.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
   ]
-}
+ 

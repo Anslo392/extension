@@ -144,6 +144,20 @@
   // SPA nav: fires normally on every URL change
   window.addEventListener('locationchange', handleUrlChange);
 
+  // ---------- URL polling fallback ----------
+  // Instagram (and some other SPAs) can navigate without triggering
+  // pushState/replaceState in a way our hook catches. So we also poll
+  // location.href every 2 seconds. If the URL changed since last check,
+  // we call handleUrlChange() which will update currentSurface and
+  // enable/disable scroll interception accordingly.
+  let lastPolledHref = location.href;
+  setInterval(() => {
+    if (location.href !== lastPolledHref) {
+      lastPolledHref = location.href;
+      handleUrlChange();
+    }
+  }, 2000);
+
   // Calculate the interrupt threshold N
 
   const DIFFICULTY_MULT = { Easy: 2.0, Medium: 1.0, Hard: 0.6, Brutal: 0.4 };
