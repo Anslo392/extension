@@ -335,7 +335,7 @@ function computeModularDeadlines(tasks, freeBlocks, taskOrder) {
   return result;
 }
 
-// ---------- actions ----------
+// actions 
 
 // Pending task waiting for survey answers
 let pendingTask = null;
@@ -406,7 +406,7 @@ async function deleteTask(id) {
   renderSchedule(tasks);
 }
 
-// ---------- init ----------
+// init
 
 (async () => {
   // Load schedule state first (taskOrder, freeBlocks)
@@ -431,7 +431,7 @@ async function deleteTask(id) {
   if (!savedBedtime) chrome.storage.local.set({ bedtime: bedtimeVal });
 })();
 
-// ---------- tab switching ----------
+// tab switching 
 
 const tabTasks    = document.getElementById('tab-tasks');
 const tabSchedule = document.getElementById('tab-schedule');
@@ -446,7 +446,7 @@ document.getElementById('tab-bar').addEventListener('click', (e) => {
   tabSchedule.style.display = which === 'schedule' ? 'block' : 'none';
 });
 
-// ---------- event listeners ----------
+//event listeners 
 
 addBtn.addEventListener('click', addTask);
 

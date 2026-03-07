@@ -32,6 +32,7 @@
   const SCROLL_COOLDOWN  = 400; // ms — debounce so one "flick" = one scroll count
 
   // state
+  let stateLoaded    = false;   // true after first refreshState() callback completes
   let threshold      = 10;      // default if no tasks exist (rarely interrupts)
   let lastScrollTime = 0;
   let overlayActive  = false;
@@ -67,6 +68,10 @@
         watchUnit    = data.watchUnit  || 'count';
         firstRunDone = !!data.firstRunDone;
         recalcThreshold();
+        if (!stateLoaded) {
+          stateLoaded = true;
+          handleUrlChange(); // first surface detection after state is known
+        }
       }
     );
   }
@@ -74,7 +79,7 @@
   // Recalculate whenever storage changes (user adds/removes a task in popup)
   chrome.storage.onChanged.addListener(() => refreshState());
 
-  // Initial load
+  // Initial load — handleUrlChange fires inside the callback above
   refreshState();
 
   // ---------- Surface detection ----------
@@ -124,20 +129,34 @@
 
   function onSurfaceChange(newSurface) {
     currentSurface = newSurface;
-    if (!scrollCountBySurface[newSurface]) scrollCountBySurface[newSurface] = 0;
-    scrollCountBySurface[newSurface] = 0;
-    sessionScrollCount = 0;
-    recalcThreshold();
 
-    // Show first-run prompt on first reels/shorts visit
-    if (!firstRunDone && (newSurface === 'reels' || newSurface === 'shorts')) {
-      showFirstRunPrompt();
+    // Only reset counters and check first-run when entering a watched surface.
+    // For home/other, just updating currentSurface is enough — onScroll's
+    // early-return handles the rest without wiping session progress.
+    if (newSurface === 'reels' || newSurface === 'shorts') {
+      scrollCountBySurface[newSurface] = 0;
+      sessionScrollCount = 0;
+      recalcThreshold();
+      if (!firstRunDone) showFirstRunPrompt();
     }
   }
 
-  // Detect surface immediately, then track SPA navigations
-  handleUrlChange();
+  // SPA nav: fires normally on every URL change
   window.addEventListener('locationchange', handleUrlChange);
+
+  // ---------- URL polling fallback ----------
+  // Instagram (and some other SPAs) can navigate without triggering
+  // pushState/replaceState in a way our hook catches. So we also poll
+  // location.href every 2 seconds. If the URL changed since last check,
+  // we call handleUrlChange() which will update currentSurface and
+  // enable/disable scroll interception accordingly.
+  let lastPolledHref = location.href;
+  setInterval(() => {
+    if (location.href !== lastPolledHref) {
+      lastPolledHref = location.href;
+      handleUrlChange();
+    }
+  }, 2000);
 
   // Calculate the interrupt threshold N
 
@@ -270,7 +289,7 @@
     });
   }
 
-  // ---------- First-run prompt ----------
+  // First-run prompt 
 
   function showFirstRunPrompt() {
     if (overlayActive) return;
@@ -333,7 +352,7 @@
     });
   }
 
-  // ---------- Session cap ----------
+  // cap
 
   function computeSessionCap() {
     if (!watchLimit) return null;
