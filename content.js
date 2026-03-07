@@ -66,8 +66,12 @@
   const DIFFICULTY_MULT = { Easy: 2.0, Medium: 1.0, Hard: 0.6, Brutal: 0.4 };
 
   function recalcThreshold() {
-    // Bedtime within 1h → interrupt every scroll
-    if (isBedtimeSoon()) { threshold = MIN_SCROLLS; return; }
+    const sleepState = getSleepState();
+    // Any sleep-aware state → interrupt aggressively
+    if (sleepState !== 'none' && sleepState !== 'normal' && sleepState !== 'morning') {
+      threshold = MIN_SCROLLS;
+      return;
+    }
 
     if (tasks.length === 0) { threshold = 999; return; }
 
@@ -121,13 +125,22 @@
     }
   });
 
-  function isBedtimeSoon() {
-    if (!bedtime) return false;
+  function getSleepState() {
+    if (!bedtime) return 'none';
+
     const [bh, bm] = bedtime.split(':').map(Number);
     const now = new Date();
-    const bedMs = new Date(now).setHours(bh, bm, 0, 0);
-    const diffMs = bedMs - now;
-    return diffMs >= 0 && diffMs <= 60 * 60 * 1000;
+    const bed = new Date(now);
+    bed.setHours(bh, bm, 0, 0);
+
+    const diff = now - bed; // ms after bedtime (negative = before bedtime)
+
+    if (diff < -3600000)      return 'normal';
+    if (diff < 0)             return 'winddown';
+    if (diff <= 3600000)      return 'bedtime';
+    if (diff <= 3 * 3600000)  return 'late';
+    if (diff <= 9 * 3600000)  return 'allnighter';
+    return 'morning';
   }
 
   // Show the full-screen overlay
@@ -138,9 +151,10 @@
 
     const overlayStartTime = Date.now();
 
-    // If bedtime is within 1 hour, show sleep overlay instead
-    if (isBedtimeSoon()) {
-      buildSleepOverlay(overlayStartTime);
+    // Show sleep overlay for any sleep-aware state
+    const sleepState = getSleepState();
+    if (sleepState !== 'none' && sleepState !== 'normal' && sleepState !== 'morning') {
+      buildSleepOverlay(overlayStartTime, sleepState);
       return;
     }
 
@@ -160,19 +174,33 @@
     });
   }
 
-  function buildSleepOverlay(overlayStartTime) {
+  function buildSleepOverlay(overlayStartTime, sleepState) {
     const [bh, bm] = bedtime.split(':').map(Number);
     const bedStr = `${String(bh).padStart(2,'0')}:${String(bm).padStart(2,'0')}`;
+
+    const now = new Date();
+    const bed = new Date(now);
+    bed.setHours(bh, bm, 0, 0);
+    const hoursOver = Math.floor((now - bed) / 3600000);
+
+    const SLEEP_CONTENT = {
+      winddown:   { icon: '&#x1F319;', title: 'Wind-down time.',       sub: `Bedtime is at ${escapeHtml(bedStr)}. Close this tab and start winding down.`, btn: 'Winding down &#x2192;' },
+      bedtime:    { icon: '&#x1F319;', title: "It's bedtime.",          sub: `You set bedtime at ${escapeHtml(bedStr)}. Time to sleep.`,                     btn: 'Going to sleep &#x2192;' },
+      late:       { icon: '&#x1F62A;', title: "You're up late.",        sub: `It's ${hoursOver}h past your bedtime. Sleep debt compounds fast.`,             btn: 'Going to sleep now &#x2192;' },
+      allnighter: { icon: '&#x1F635;', title: "All-nighter alert.",     sub: `It's been ${hoursOver}h since your bedtime. This is hurting your focus.`,      btn: 'Okay, going to sleep &#x2192;' },
+    };
+
+    const c = SLEEP_CONTENT[sleepState] || SLEEP_CONTENT.bedtime;
 
     const overlay = document.createElement('div');
     overlay.id = 'webe-overlay';
     overlay.innerHTML = `
       <div id="webe-card">
         <div id="webe-logo">WEBE</div>
-        <div id="webe-sleep-icon">&#x1F319;</div>
-        <div id="webe-sleep-title">It's almost bedtime.</div>
-        <div id="webe-sleep-sub">Bedtime is at ${escapeHtml(bedStr)}. Close this tab and wind down.</div>
-        <button id="webe-dismiss">Going to sleep &#x2192;</button>
+        <div id="webe-sleep-icon">${c.icon}</div>
+        <div id="webe-sleep-title">${c.title}</div>
+        <div id="webe-sleep-sub">${c.sub}</div>
+        <button id="webe-dismiss">${c.btn}</button>
       </div>
     `;
 
