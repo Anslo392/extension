@@ -1,44 +1,36 @@
-// content.js
-// Injected into Instagram, TikTok, YouTube Shorts.
-//
-// WHAT IT DOES:
-//   1. Listens for scroll events on the page
-//   2. Keeps a running scroll counter
-//   3. When scrollCount hits the threshold N, it injects a
-//      full-screen overlay asking the user about their task
-//   4. The overlay is "unskippable" — blocks pointer events
-//      on the page until the user engages
-//   5. Tracks time the overlay is up as "minutes saved" - change to self reported survey
-//
-// HOW THE INTERRUPT ALGORITHM WORKS:
-//   N = max(MIN_SCROLLS, floor(hoursUntilDue / URGENCY_DIVISOR))
-//
-//   - hoursUntilDue: hours remaining until the soonest task
-//   - URGENCY_DIVISOR: controls how aggressively N shrinks
-//     as the deadline approaches (lower = more aggressive)
-//   - MIN_SCROLLS: the floor — never interrupt more often
-//     than every MIN_SCROLLS scrolls
-//
-//   Example with defaults (MIN_SCROLLS=3, URGENCY_DIVISOR=4):
-//     Due in 48h → N = floor(48/4) = 12 scrolls between interrupts
-//     Due in 12h → N = floor(12/4) = 3  scrolls (hits the minimum)
-//     Due in 2h  → N = 3 (clamped to minimum)
+//content.js
+//Injected into Instagram, TikTok, YouTube Shorts.
+//// WHAT IT DOES:
+//  1. Listens for scroll events on the page
+//  2. Keeps a running scroll counter
+//  3. When scrollCount hits the threshold N, it injects a full-screen overlay asking the user about their task
+//  4. The overlay is "unskippable" - blocks pointer events on the page until the user engages
+//  5. Tracks time the overlay is up as "minutes saved" - change to self reported survey
+//// HOW THE INTERRUPT ALGORITHM WORKS:
+//  - N = max(MIN_SCROLLS, floor(hoursUntilDue / URGENCY_DIVISOR))
+//  - hoursUntilDue: hours remaining until the soonest task
+//  - URGENCY_DIVISOR: controls how aggressively N shrinks as the deadline approaches (lower = more aggressive)
+//  - MIN_SCROLLS: the floor — never interrupt more often than every MIN_SCROLLS scrolls
+////   Example with defaults (MIN_SCROLLS=3, URGENCY_DIVISOR=4):
+//    Due in 48h, N = floor(48/4) = 12 scrolls between interrupts
+//    Due in 12h, N = floor(12/4) = 3  scrolls (hits the minimum)
+//    Due in 2h, N = 3 (clamped to minimum)
 
 
 (() => {
   // consts
-  const MIN_SCROLLS     = 10;   // never fewer than 10 scrolls between interrupts
-  const SCROLL_COOLDOWN = 400;  // ms — debounce so one "flick" = one scroll count
+  const MIN_SCROLLS     = 5;    //never fewer than 5 scrolls between interrupts
+  const SCROLL_COOLDOWN = 400;  //ms — debounce so one "flick" = one scroll count
 
-  // Maps popup urgency slider (1-4) → URGENCY_DIVISOR value.
-  // Higher divisor = smaller threshold = more frequent interrupts.
-  // Slider 1 (Chill) → divisor 16 (rare); Slider 4 (Max) → divisor 2 (very frequent).
+  //Maps popup urgency slider (1-4) → URGENCY_DIVISOR value.
+  //Higher divisor = smaller threshold = more frequent interrupts.
+  //Slider 1 (Chill) → divisor 16 (rare); Slider 4 (Max) → divisor 2 (very frequent).
   const URGENCY_DIVISOR_MAP = { 1: 16, 2: 8, 3: 4, 4: 2 };
-  let urgencyDivisor = 8; // default: Normal (slider pos 2)
+  let urgencyDivisor = 8; //default: Normal (slider pos 2)
 
-  // state
-  let stateLoaded    = false;   // true after first refreshState() callback completes
-  let threshold      = 10;      // default if no tasks exist (rarely interrupts)
+  //state
+  let stateLoaded    = false;   //true after first refreshState() callback completes
+  let threshold      = 10;      //default if no tasks exist (rarely interrupts)
   let lastScrollTime = 0;
   let overlayActive  = false;
   let tasks          = [];
@@ -47,17 +39,17 @@
   let taskOrder      = [];
   let freeBlocks     = [];
 
-  // surface-aware scroll state
-  let currentSurface     = null;  // 'reels' | 'shorts' | 'home' | 'other'
-  let sessionScrollCount = 0;     // total scrolls this session (for hard cap)
-  // Note: per-escalation scroll counting is owned by ai.js (scrollsSinceLastStage)
+  //surface-aware scroll state
+  let currentSurface     = null;  //'reels' | 'shorts' | 'home' | 'other'
+  let sessionScrollCount = 0;     //total scrolls this session (for hard cap)
+  //Note: per-escalation scroll counting is owned by ai.js (scrollsSinceLastStage)
 
-  // first-run / watch-limit state
+  //first-run/watch-limit state
   let watchLimit   = null;   // user's preferred reel/minute cap
   let watchUnit    = 'count'; // 'count' | 'minutes'
   let firstRunDone = false;
 
-  // Load tasks + active state from chrome.storage
+  //Load tasks + active state from chrome.storage
 
   function refreshState() {
     chrome.storage.local.get(
@@ -82,13 +74,13 @@
     );
   }
 
-  // Recalculate whenever storage changes (user adds/removes a task in popup)
+  //Recalculate whenever storage changes (user adds/removes a task in popup)
   chrome.storage.onChanged.addListener(() => refreshState());
 
-  // Initial load — handleUrlChange fires inside the callback above
+  //Initial load - handleUrlChange fires inside the callback above
   refreshState();
 
-  // ---------- Surface detection ----------
+  //Surface detection
 
   function getSurfaceFromUrl(urlStr) {
     try {
@@ -101,7 +93,7 @@
       if (host.includes('vm.tiktok.com'))                                           return 'shorts';
       if (host.includes('instagram.com') && (/\/reel|\/reels\//).test(p))          return 'reels';
 
-      // Home / feed pages — tracked separately but not interrupted
+      //Home/feed pages - tracked separately but not interrupted
       if (host.includes('youtube.com')  && (p === '/' || p.startsWith('/feed') || p.startsWith('/results'))) return 'home';
       if (host.includes('instagram.com') && (p === '/' || p.startsWith('/explore')))                         return 'home';
       if (host.includes('tiktok.com')   && (p === '/' || p.includes('/for-you') || p.includes('/foryou')))   return 'home';
@@ -112,7 +104,7 @@
     }
   }
 
-  // SPA navigation hook — fires a synthetic 'locationchange' on any history mutation
+  //SPA navigation hook - fires a synthetic 'locationchange' on any history mutation
   (function installLocationChangeHook() {
     const wrap = (type) => {
       const orig = history[type];
@@ -136,9 +128,9 @@
   function onSurfaceChange(newSurface) {
     currentSurface = newSurface;
 
-    // Only reset counters and check first-run when entering a watched surface.
-    // For home/other, just updating currentSurface is enough — onScroll's
-    // early-return handles the rest without wiping session progress.
+    //Only reset counters and check first-run when entering a watched surface.
+    //For home/other, just updating currentSurface is enough - onScroll's
+    //early-return handles the rest without wiping session progress.
     if (newSurface === 'reels' || newSurface === 'shorts') {
       sessionScrollCount = 0;
       recalcThreshold();
@@ -147,15 +139,14 @@
     }
   }
 
-  // SPA nav: fires normally on every URL change
+  //SPA nav: fires normally on every URL change
   window.addEventListener('locationchange', handleUrlChange);
 
-  // ---------- URL polling fallback ----------
-  // Instagram (and some other SPAs) can navigate without triggering
-  // pushState/replaceState in a way our hook catches. So we also poll
-  // location.href every 2 seconds. If the URL changed since last check,
-  // we call handleUrlChange() which will update currentSurface and
-  // enable/disable scroll interception accordingly.
+  //URL polling fallback
+
+  //Instagram (and some other SPAs) can navigate without triggering pushState/replaceState in a way our hook catches. So we also poll
+  //location.href every 2 seconds. If the URL changed since last check, we call handleUrlChange()
+  //which will update currentSurface and enable/disable scroll interception accordingly.
   let lastPolledHref = location.href;
   setInterval(() => {
     if (location.href !== lastPolledHref) {
@@ -164,13 +155,13 @@
     }
   }, 2000);
 
-  // Calculate the interrupt threshold N
+  //Calculate the interrupt threshold N
 
   const DIFFICULTY_MULT = { Easy: 2.0, Medium: 1.0, Hard: 0.6, Brutal: 0.4 };
 
   function recalcThreshold() {
     const sleepState = getSleepState();
-    // Any sleep-aware state → interrupt aggressively
+    //Any sleep-aware state, interrupt aggressively
     if (sleepState !== 'none' && sleepState !== 'normal' && sleepState !== 'morning') {
       threshold = MIN_SCROLLS;
       return;
@@ -178,7 +169,7 @@
 
     if (tasks.length === 0) { threshold = 999; return; }
 
-    // Use modular deadlines so same-day tasks don't compete
+    //Use modular deadlines so same-day tasks don't compete
     const scheduled = computeModularDeadlines(tasks, freeBlocks, taskOrder);
 
     let best = null, soonestMs = Infinity;
@@ -196,16 +187,14 @@
   }
 
   
-  // Listen for scrolls
+  //Listen for scrolls
 
-  // We use 'wheel' + 'touchend' to catch both desktop scroll
-  // and mobile-style swipe. Debounced so rapid-fire events
-  // from a single gesture only count as one scroll.
+  //We use 'wheel' + 'touchend', debounced so rapid-fire events from a single gesture only count as one scroll.
 
   function onScroll() {
     if (!isActive || overlayActive) return;
 
-    // Only intercept reels/shorts — ignore home feed and other surfaces
+    //Only intercept reels/shorts — ignore home feed and other surfaces
     if (currentSurface !== 'reels' && currentSurface !== 'shorts') return;
 
     const now = Date.now();
@@ -214,7 +203,7 @@
 
     sessionScrollCount++;
 
-    // Hard session cap check (runs before AI escalation)
+    //Hard session cap check (runs before AI escalation)
     const cap = computeSessionCap();
     if (cap !== null && sessionScrollCount >= cap) {
       sessionScrollCount = 0;
@@ -222,26 +211,23 @@
       return;
     }
 
-    // Sleep state check — BEFORE escalation so sleep overlays never consume
-    // escalation stages. Uses sessionScrollCount as its own simple clock.
-    const sleepState = getSleepState();
-    if (sleepState !== 'none' && sleepState !== 'normal' && sleepState !== 'morning') {
-      if (sessionScrollCount % MIN_SCROLLS === 0) {
-        overlayActive = true;
-        buildSleepOverlay(Date.now(), sleepState);
-      }
-      return;
-    }
-
-    // No tasks → nothing to interrupt about; don't consume an escalation stage
-    if (tasks.length === 0) return;
-
     const action = window.getEscalationAction(threshold);
     if (!action) return; // not time yet
 
     recalcThreshold();
 
-    // Build taskInfo for ai.js from the most urgent task
+    //Check sleep state first - sleep overlays override AI escalation
+    const sleepState = getSleepState();
+    if (sleepState !== 'none' && sleepState !== 'normal' && sleepState !== 'morning') {
+      overlayActive = true;
+      buildSleepOverlay(Date.now(), sleepState);
+      return;
+    }
+
+    //No tasks
+    if (tasks.length === 0) return;
+
+    //Build taskInfo for ai.js from the most urgent task
     const scheduled = computeModularDeadlines(tasks, freeBlocks, taskOrder);
     let urgentTask = scheduled[0];
     let soonestMs = Infinity;
@@ -262,12 +248,12 @@
     const overlayStartTime = Date.now();
 
     if (action.hardBlock) {
-      // Stage 4: permanent block with AI farewell roast
+      //Stage 4: permanent block with AI farewell roast
       window.showHardBlockAI(action.personality, taskInfo);
     } else {
-      // Stages 1-3: chat overlay with AI conversation
+      //Stages 1-3: chat overlay with AI conversation
       window.showChatOverlay(action.stage, action.personality, taskInfo, () => {
-        // onDismiss callback — same cleanup as the original dismiss()
+        //onDismiss callback - same cleanup as the original dismiss()
         const minutesOnOverlay = (Date.now() - overlayStartTime) / (1000 * 60);
         chrome.storage.local.get(['minutesSaved'], (data) => {
           const total = (data.minutesSaved || 0) + minutesOnOverlay;
@@ -281,7 +267,7 @@
   window.addEventListener('wheel',    onScroll, { passive: true });
   window.addEventListener('touchend', onScroll, { passive: true });
 
-  // Also catch keyboard-based scrolling (arrow keys, spacebar)
+  //Also catch keyboard-based scrolling (arrow keys, spacebar)
   window.addEventListener('keydown', (e) => {
     if (['ArrowDown', 'ArrowUp', ' ', 'PageDown'].includes(e.key)) {
       onScroll();
@@ -296,7 +282,7 @@
     const bed = new Date(now);
     bed.setHours(bh, bm, 0, 0);
 
-    const diff = now - bed; // ms after bedtime (negative = before bedtime)
+    const diff = now - bed; //ms after bedtime (negative = before bedtime)
 
     if (diff < -3600000)      return 'normal';
     if (diff < 0)             return 'winddown';
@@ -306,7 +292,7 @@
     return 'morning';
   }
 
-  // First-run prompt 
+  //First-run prompt 
 
   function showFirstRunPrompt() {
     if (overlayActive) return;
@@ -369,16 +355,16 @@
     });
   }
 
-  // cap
+  //cap
 
   function computeSessionCap() {
     if (!watchLimit) return null;
     if (tasks.length === 0) return null;
 
-    // Convert user preference to scroll count
+    //Convert user preference to scroll count
     const userCap = watchUnit === 'minutes' ? Math.floor(watchLimit * 2) : watchLimit;
 
-    // Compute logical max from task urgency (soonest effective due)
+    //Compute logical max from task urgency (soonest effective due)
     const scheduled = computeModularDeadlines(tasks, freeBlocks, taskOrder);
     let best = null, soonestMs = Infinity;
     scheduled.forEach(s => {
@@ -392,7 +378,7 @@
     const estimatedHours = ESTIMATE_HOURS[best.estimatedTime] ?? 1;
     const slackHours     = Math.max(0, hoursLeft - estimatedHours);
     const leisureMinutes = slackHours * 60 * 0.25;
-    const logicalMax     = Math.max(1, Math.floor(leisureMinutes * 2)); // min 1 so cap always applies
+    const logicalMax     = Math.max(1, Math.floor(leisureMinutes * 2)); //min 1 so cap always applies
 
     return Math.min(userCap, logicalMax);
   }
@@ -401,7 +387,7 @@
     if (overlayActive) return;
     overlayActive = true;
 
-    // Build context string from soonest task
+    //Build context string from soonest task
     const scheduled = computeModularDeadlines(tasks, freeBlocks, taskOrder);
     let urgentTask = null, soonestMs = Infinity;
     scheduled.forEach(s => {
@@ -446,7 +432,7 @@
     document.documentElement.appendChild(style);
     document.documentElement.appendChild(overlay);
     document.body.style.overflow = 'hidden';
-    // No dismiss handler — intentionally blocks until tab is closed
+    //No dismiss handler, intentionally blocks until tab is closed
   }
 
   function buildSleepOverlay(overlayStartTime, sleepState) {
@@ -520,19 +506,19 @@
     });
   }
 
-  // Dismiss overlay & track minutes saved
+  //Dismiss overlay & track minutes saved
 
   function dismiss(overlay, style, startTime) {
-    // Calculate how long the overlay was visible (in minutes)
+    //Calculate how long the overlay was visible (in minutes)
     const minutesOnOverlay = (Date.now() - startTime) / (1000 * 60);
 
-    // Add to cumulative minutes saved
+    //Add to cumulative minutes saved
     chrome.storage.local.get(['minutesSaved'], (data) => {
       const total = (data.minutesSaved || 0) + minutesOnOverlay;
       chrome.storage.local.set({ minutesSaved: total });
     });
 
-    // Clean up DOM
+    //Clean up DOM
     overlay.remove();
     style.remove();
     document.body.style.overflow = '';
@@ -540,8 +526,8 @@
   }
 
   
-  // Utility functions (duplicated here so content script is
-  // self-contained — no imports in content scripts)
+  //Utility functions (duplicated here so content script is
+  //self-contained, no imports in content scripts)
   
 
   const ESTIMATE_HOURS = {

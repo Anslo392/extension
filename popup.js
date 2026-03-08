@@ -1,8 +1,8 @@
-// ============================================================
-// popup.js
-// Manages the task list UI and syncs everything to
-// chrome.storage.local so the content script can read it.
-// ============================================================
+//============================================================
+//popup.js
+//Manages the task list UI and syncs everything to
+//chrome.storage.local so the content script can read it.
+//============================================================
 
 const taskNameInput  = document.getElementById('task-name');
 const taskDateInput  = document.getElementById('task-date');
@@ -26,25 +26,25 @@ const freeLabelInput = document.getElementById('free-label');
 const freeDurOpts    = document.getElementById('free-dur-opts');
 const freeConfirmBtn = document.getElementById('free-confirm');
 
-// Schedule state
+//Schedule state
 let taskOrder  = [];
 let freeBlocks = [];
 let pendingFreeDur = null;
 
-// ---------- helpers ----------
+//helpers
 
-// Generate a simple unique id (timestamp + random suffix)
+//Generate a simple unique id (timestamp + random suffix)
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
-// Calculate hours remaining until a due date string ("YYYY-MM-DDTHH:MM")
+//Calculate hours remaining until a due date string ("YYYY-MM-DDTHH:MM")
 function hoursUntil(dueDateISO) {
   const diff = new Date(dueDateISO) - Date.now();
   return Math.max(0, diff / (1000 * 60 * 60));
 }
 
-// Format how overdue a task is as "-HH:MM"
+//Format how overdue a task is as "-HH:MM"
 function formatOverdue(dueDateISO) {
   const overdueMs = Date.now() - new Date(dueDateISO);
   const totalMin  = Math.floor(overdueMs / 60000);
@@ -53,7 +53,7 @@ function formatOverdue(dueDateISO) {
   return `-${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-// Format a due date for display
+//Format a due date for display
 function formatDue(dueDateISO) {
   const h = hoursUntil(dueDateISO);
   if (h <= 0) return formatOverdue(dueDateISO);
@@ -61,7 +61,7 @@ function formatDue(dueDateISO) {
   return `${Math.round(h / 24)}d left`;
 }
 
-// ---------- render ----------
+//render
 
 function renderTasks(tasks) {
   taskListEl.innerHTML = '';
@@ -70,8 +70,7 @@ function renderTasks(tasks) {
     taskListEl.innerHTML = '<div class="empty-state">No tasks yet — add one above!</div>';
     return;
   }
-
-  // Sort by due date (soonest first)
+  //Sort by due date, soonest first
   tasks.sort((a, b) => new Date(a.due) - new Date(b.due));
 
   tasks.forEach(task => {
@@ -90,7 +89,7 @@ function renderTasks(tasks) {
     taskListEl.appendChild(item);
   });
 
-  // Wire up delete buttons
+  //Wire up delete buttons
   taskListEl.querySelectorAll('.delete-btn').forEach(btn => {
     btn.addEventListener('click', () => deleteTask(btn.dataset.id));
   });
@@ -102,7 +101,7 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
-// ---------- storage helpers ----------
+//storage helpers
 
 async function loadTasks() {
   const data = await chrome.storage.local.get(['tasks']);
@@ -133,14 +132,14 @@ async function saveScheduleState() {
   await chrome.storage.local.set({ taskOrder, freeBlocks });
 }
 
-// ---------- schedule rendering ----------
+//schedule rendering
 
 function formatModularDue(effectiveDue, estimatedHours) {
   const leftMs    = effectiveDue - Date.now();
   const deficitMs = leftMs - (estimatedHours * 3600000);
 
   if (deficitMs < 0) {
-    // Not enough time left to complete the task (Y - X < 0)
+    //Not enough time left to complete the task (Y - X < 0)
     const totalMin = Math.floor(-deficitMs / 60000);
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
@@ -164,7 +163,7 @@ function renderSchedule(tasks) {
   const freeMap   = Object.fromEntries(freeBlocks.map(b => [b.id, b]));
   const taskMap   = Object.fromEntries(tasks.map(t => [t.id, t]));
 
-  // Build display order: taskOrder items first, then unordered tasks
+  //Build display order: taskOrder items first, then unordered tasks
   const knownIds = new Set([...tasks.map(t => t.id), ...freeBlocks.map(b => b.id)]);
   const ordered  = taskOrder.filter(id => knownIds.has(id));
   const unordered = tasks.filter(t => !taskOrder.includes(t.id)).map(t => t.id);
@@ -218,7 +217,7 @@ function renderSchedule(tasks) {
 
     if (!row) return;
 
-    // Drag-and-drop
+    //Drag-and-drop
     row.addEventListener('dragstart', () => { dragSrcId = id; row.style.opacity = '0.5'; });
     row.addEventListener('dragend',   () => { row.style.opacity = ''; });
     row.addEventListener('dragover',  (e) => { e.preventDefault(); row.classList.add('drag-over'); });
@@ -228,7 +227,7 @@ function renderSchedule(tasks) {
       row.classList.remove('drag-over');
       if (!dragSrcId || dragSrcId === id) return;
 
-      // Ensure both IDs are in taskOrder
+      //Ensure both IDs are in taskOrder
       if (!taskOrder.includes(dragSrcId)) taskOrder.push(dragSrcId);
       if (!taskOrder.includes(id))        taskOrder.push(id);
 
@@ -245,7 +244,7 @@ function renderSchedule(tasks) {
     scheduleListEl.appendChild(row);
   });
 
-  // Wire up 10-segment progress bars
+  //Wire up 10-segment progress bars
   scheduleListEl.querySelectorAll('.progress-bar').forEach(bar => {
     bar.addEventListener('click', async (e) => {
       const seg = e.target.closest('.pb-seg');
@@ -266,7 +265,7 @@ function renderSchedule(tasks) {
     });
   });
 
-  // Wire up free block delete buttons
+  //Wire up free block delete buttons
   scheduleListEl.querySelectorAll('.free-row .delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
@@ -278,22 +277,21 @@ function renderSchedule(tasks) {
   });
 }
 
-// ---------- scheduling ----------
+//scheduling
 
 const ESTIMATE_HOURS = {
   '15m': 0.25, '30m': 0.5, '1h': 1, '2h': 2, '4h+': 4, 'All day': 8
 };
 
-// Computes a modular effective deadline for each task so same-deadline
-// tasks don't compete. Tasks due on the same day are stacked backward
-// from the deadline based on their estimated time and the user's ordering.
-//
-// Returns: array of { ...task, effectiveDue: Date }
+//Computes a modular effective deadline for each task so same-deadline tasks don't compete. Tasks due on the same day are stacked backward
+//from the deadline based on their estimated time and the user's ordering.
+
+//Returns: array of { ...task, effectiveDue: Date }
 function computeModularDeadlines(tasks, freeBlocks, taskOrder) {
   const freeMap = Object.fromEntries((freeBlocks || []).map(b => [b.id, b]));
   const taskMap = Object.fromEntries(tasks.map(t => [t.id, t]));
 
-  // Group tasks by due-date day (YYYY-MM-DD)
+  //Group tasks by due-date day (YYYY-MM-DD)
   const groups = {};
   tasks.forEach(t => {
     const day = t.due.slice(0, 10);
@@ -304,17 +302,16 @@ function computeModularDeadlines(tasks, freeBlocks, taskOrder) {
   const result = [];
 
   Object.values(groups).forEach((groupTasks) => {
-    // Use the raw due date of the first task in the group as the deadline
+    //Use the raw due date of the first task in the group as the deadline
     const deadlineMs = new Date(groupTasks[0].due).getTime();
 
-    // Build ordered list of IDs for this group from taskOrder, then append
-    // any tasks not yet in taskOrder at the end
+    //Build ordered list of IDs for this group from taskOrder, then append any tasks not yet in taskOrder at the end
     const groupIds = new Set(groupTasks.map(t => t.id));
     const ordered = (taskOrder || []).filter(id => groupIds.has(id));
     const unordered = groupTasks.filter(t => !taskOrder.includes(t.id)).map(t => t.id);
     const fullOrder = [...ordered, ...unordered];
 
-    // Scan backward: assign effectiveDue starting from the raw deadline
+    //Scan backward: assign effectiveDue starting from the raw deadline
     let cursor = deadlineMs;
     const effectiveDues = {};
 
@@ -337,9 +334,9 @@ function computeModularDeadlines(tasks, freeBlocks, taskOrder) {
   return result;
 }
 
-// actions 
+//actions 
 
-// Pending task waiting for survey answers
+//Pending task waiting for survey answers
 let pendingTask = null;
 
 async function addTask() {
@@ -357,14 +354,14 @@ async function addTask() {
 }
 
 function showSurvey() {
-  // Hide add form, show survey
+  //Hide add form, show survey
   addForm.style.display = 'none';
   surveyPanel.style.display = 'flex';
 
-  // Show task name in preview
+  //Show task name in preview
   surveyPreview.textContent = pendingTask.name;
 
-  // Reset selections
+  //Reset selections
   surveyPanel.querySelectorAll('.survey-opts button').forEach(b => b.classList.remove('selected'));
   surveyConfirm.disabled = true;
   pendingTask.difficulty   = null;
@@ -387,7 +384,7 @@ async function confirmAddTask() {
   tasks.push(pendingTask);
   await saveTasks(tasks);
 
-  // Clear inputs
+  //Clear inputs
   taskNameInput.value = '';
   taskDateInput.value = '';
   taskTimeInput.value = '23:59';
@@ -408,40 +405,40 @@ async function deleteTask(id) {
   renderSchedule(tasks);
 }
 
-// init
+//init
 
 (async () => {
-  // Load schedule state first (taskOrder, freeBlocks)
+  //Load schedule state first (taskOrder, freeBlocks)
   await loadScheduleState();
 
-  // Render tasks
+  //Render tasks
   const tasks = await loadTasks();
   renderTasks(tasks);
   renderSchedule(tasks);
 
-  // Show minutes saved
+  //Show minutes saved
   const mins = await loadMinutesSaved();
   minutesSavedEl.textContent = Math.round(mins);
 
-  // Set toggle state
+  //Set toggle state
   toggleActive.checked = await loadActive();
 
-  // Load bedtime — always persist so content.js can read it
+  //Load bedtime, always persist so content.js can read it
   const { bedtime: savedBedtime } = await chrome.storage.local.get(['bedtime']);
   const bedtimeVal = savedBedtime || '23:00';
   bedtimeInput.value = bedtimeVal;
   if (!savedBedtime) chrome.storage.local.set({ bedtime: bedtimeVal });
 
-  // Load personality
+  //Load personality
   const { webePersonality } = await chrome.storage.local.get(['webePersonality']);
   personalitySelect.value = webePersonality || 'Random';
 
-  // Load urgency level (1=Chill … 4=Max), default 2 (Normal)
+  //Load urgency level (1=Chill … 4=Max), default 2 (Normal)
   const { urgencyLevel } = await chrome.storage.local.get(['urgencyLevel']);
   urgencySlider.value = urgencyLevel ?? 2;
 })();
 
-// tab switching 
+//tab switching 
 
 const tabTasks    = document.getElementById('tab-tasks');
 const tabSchedule = document.getElementById('tab-schedule');
@@ -464,7 +461,7 @@ taskNameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') addTask();
 });
 
-// Survey option buttons
+//Survey option buttons
 document.getElementById('diff-opts').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-val]');
   if (!btn || !pendingTask) return;
@@ -502,7 +499,7 @@ urgencySlider.addEventListener('input', () => {
   chrome.storage.local.set({ urgencyLevel: Number(urgencySlider.value) });
 });
 
-// Free block form
+//Free block form
 addFreeBtn.addEventListener('click', () => {
   freeBlockForm.style.display = freeBlockForm.style.display === 'flex' ? 'none' : 'flex';
   freeLabelInput.value = '';
