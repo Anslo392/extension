@@ -27,7 +27,7 @@
 
 (() => {
   // consts
-  const MIN_SCROLLS     = 5;    // never fewer than 5 scrolls between interrupts
+  const MIN_SCROLLS     = 10;   // never fewer than 10 scrolls between interrupts
   const SCROLL_COOLDOWN = 400;  // ms — debounce so one "flick" = one scroll count
 
   // Maps popup urgency slider (1-4) → URGENCY_DIVISOR value.
@@ -222,21 +222,24 @@
       return;
     }
 
-    const action = window.getEscalationAction(threshold, MIN_SCROLLS);
-    if (!action) return; // not time yet
-
-    recalcThreshold();
-
-    // Check sleep state first — sleep overlays override AI escalation
+    // Sleep state check — BEFORE escalation so sleep overlays never consume
+    // escalation stages. Uses sessionScrollCount as its own simple clock.
     const sleepState = getSleepState();
     if (sleepState !== 'none' && sleepState !== 'normal' && sleepState !== 'morning') {
-      overlayActive = true;
-      buildSleepOverlay(Date.now(), sleepState);
+      if (sessionScrollCount % MIN_SCROLLS === 0) {
+        overlayActive = true;
+        buildSleepOverlay(Date.now(), sleepState);
+      }
       return;
     }
 
-    // No tasks → nothing to show
+    // No tasks → nothing to interrupt about; don't consume an escalation stage
     if (tasks.length === 0) return;
+
+    const action = window.getEscalationAction(threshold);
+    if (!action) return; // not time yet
+
+    recalcThreshold();
 
     // Build taskInfo for ai.js from the most urgent task
     const scheduled = computeModularDeadlines(tasks, freeBlocks, taskOrder);

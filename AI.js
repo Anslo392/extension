@@ -172,8 +172,7 @@
   //               — time to interrupt! content.js should call showChatOverlay()
   //                 or showHardBlockAI() depending on hardBlock.
 
-  window.getEscalationAction = function (baseGap, minScrolls) {
-    minScrolls = minScrolls || 5; // fallback if not passed
+  window.getEscalationAction = function (baseGap) {
     scrollsSinceLastStage++;
 
     // Already past all stages → stay hard-blocked (shouldn't reach here
@@ -183,10 +182,10 @@
     const stageDef = ESCALATION_STAGES[currentEscalationIndex];
 
     // The scroll threshold for THIS stage:
-    //   baseGap (from urgency) × this stage's multiplier, floored to minScrolls.
-    //   This ensures even the most aggressive stage can't interrupt faster
-    //   than every minScrolls scrolls.
-    const scrollThreshold = Math.max(minScrolls, Math.floor(baseGap * stageDef.scrollGapMultiplier));
+    //   baseGap (from urgency) × this stage's multiplier, floored to at least 3.
+    //   Floor of 3 prevents late stages from collapsing to 1-2 scrolls even
+    //   at maximum urgency — keeps the non-linear feel meaningful.
+    const scrollThreshold = Math.max(3, Math.floor(baseGap * stageDef.scrollGapMultiplier));
 
     if (scrollsSinceLastStage < scrollThreshold) return null;
 
