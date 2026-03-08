@@ -9,7 +9,6 @@ const taskDateInput  = document.getElementById('task-date');
 const taskTimeInput  = document.getElementById('task-time');
 const addBtn         = document.getElementById('add-btn');
 const taskListEl     = document.getElementById('task-list');
-const minutesSavedEl = document.getElementById('minutes-saved');
 const toggleActive   = document.getElementById('toggle-active');
 
 const addForm        = document.getElementById('add-form');
@@ -110,11 +109,6 @@ async function loadTasks() {
 
 async function saveTasks(tasks) {
   await chrome.storage.local.set({ tasks });
-}
-
-async function loadMinutesSaved() {
-  const data = await chrome.storage.local.get(['minutesSaved']);
-  return data.minutesSaved || 0;
 }
 
 async function loadActive() {
@@ -415,10 +409,6 @@ async function deleteTask(id) {
   const tasks = await loadTasks();
   renderTasks(tasks);
   renderSchedule(tasks);
-
-  //Show minutes saved
-  const mins = await loadMinutesSaved();
-  minutesSavedEl.textContent = Math.round(mins);
 
   //Set toggle state
   toggleActive.checked = await loadActive();

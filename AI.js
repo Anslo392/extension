@@ -9,16 +9,6 @@
 //  4. Renders a chat-style overlay where the AI guilt-trips
 //     the user into closing the app
 //  5. At the final stage, hard-blocks with an AI farewell roast
-////HOW ESCALATION WORKS (non-linear):
-//  Stage 1 → first interrupt.    1 AI message,  user can dismiss after reading.
-//  Stage 2 → second interrupt.   ~5 exchanges,  user must engage to dismiss.
-//  Stage 3 → third interrupt.    ~15 exchanges, full conversation required.
-//  Stage 4 → hard block.         No dismiss. One final AI roast. Tab is done.
-////  The scroll gaps BETWEEN stages shrink each time:
-//    Gap to stage 1:  base * 1.0   (e.g. 8 scrolls)
-//    Gap to stage 2:  base * 0.6   (e.g. 5 scrolls)
-//    Gap to stage 3:  base * 0.35  (e.g. 3 scrolls)
-//    Gap to stage 4:  base * 0.25  (e.g. 2 scrolls)
 ////  "base" is controlled by task urgency from content.js —
 //  the closer your deadline, the smaller the base, and
 //  ALL stages come faster.
@@ -29,7 +19,7 @@
   // CONFIG 
     const GEMINI_API_KEY = 'Insert-API-Key-Here';
 
-  const GEMINI_MODEL = 'gemini-3-flash-preview';
+    const GEMINI_MODEL = 'gemini-3-flash-preview';
 
 
 

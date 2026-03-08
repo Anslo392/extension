@@ -220,7 +220,7 @@
     const sleepState = getSleepState();
     if (sleepState !== 'none' && sleepState !== 'normal' && sleepState !== 'morning') {
       overlayActive = true;
-      buildSleepOverlay(Date.now(), sleepState);
+      buildSleepOverlay(sleepState);
       return;
     }
 
@@ -245,7 +245,6 @@
     };
 
     overlayActive = true;
-    const overlayStartTime = Date.now();
 
     if (action.hardBlock) {
       //Stage 4: permanent block with AI farewell roast
@@ -253,12 +252,7 @@
     } else {
       //Stages 1-3: chat overlay with AI conversation
       window.showChatOverlay(action.stage, action.personality, taskInfo, () => {
-        //onDismiss callback - same cleanup as the original dismiss()
-        const minutesOnOverlay = (Date.now() - overlayStartTime) / (1000 * 60);
-        chrome.storage.local.get(['minutesSaved'], (data) => {
-          const total = (data.minutesSaved || 0) + minutesOnOverlay;
-          chrome.storage.local.set({ minutesSaved: total });
-        });
+        //onDismiss callback
         overlayActive = false;
       });
     }
@@ -435,7 +429,7 @@
     //No dismiss handler, intentionally blocks until tab is closed
   }
 
-  function buildSleepOverlay(overlayStartTime, sleepState) {
+  function buildSleepOverlay(sleepState) {
     const [bh, bm] = bedtime.split(':').map(Number);
     const bedStr = `${String(bh).padStart(2,'0')}:${String(bm).padStart(2,'0')}`;
 
@@ -502,23 +496,13 @@
     document.body.style.overflow = 'hidden';
 
     overlay.querySelector('#webe-dismiss').addEventListener('click', () => {
-      dismiss(overlay, style, overlayStartTime);
+      dismiss(overlay, style);
     });
   }
 
   //Dismiss overlay & track minutes saved
 
-  function dismiss(overlay, style, startTime) {
-    //Calculate how long the overlay was visible (in minutes)
-    const minutesOnOverlay = (Date.now() - startTime) / (1000 * 60);
-
-    //Add to cumulative minutes saved
-    chrome.storage.local.get(['minutesSaved'], (data) => {
-      const total = (data.minutesSaved || 0) + minutesOnOverlay;
-      chrome.storage.local.set({ minutesSaved: total });
-    });
-
-    //Clean up DOM
+  function dismiss(overlay, style) {
     overlay.remove();
     style.remove();
     document.body.style.overflow = '';
