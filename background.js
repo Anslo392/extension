@@ -1,12 +1,5 @@
-// background.js
-// Service worker for WEBE.
-// Next for this file:
-//   - Alarm-based reminders
-//   - Badge text showing task count
-//   - Notification support
-// 
 chrome.runtime.onInstalled.addListener(() => {
-  // Set default storage values on first install
+  //Set default storage values on first install
   chrome.storage.local.get(['tasks', 'minutesSaved', 'webeActive'], (data) => {
     const defaults = {};
     if (!data.tasks)         defaults.tasks = [];

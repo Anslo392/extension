@@ -1,49 +1,40 @@
-// ai.js
-// AI-powered escalation system for WEBE.
-// Loaded BEFORE content.js in the manifest so all functions
-// here are available on `window` for content.js to call.
-//
-// WHAT THIS FILE DOES:
-//   1. Defines the escalation stage system (non-linear)
-//   2. Builds personality-aware system prompts for Gemini
-//   3. Calls the Gemini REST API via raw fetch()
-//   4. Renders a chat-style overlay where the AI guilt-trips
-//      the user into closing the app
-//   5. At the final stage, hard-blocks with an AI farewell roast
-//
-// HOW ESCALATION WORKS (non-linear):
-//   Stage 1 → first interrupt.    1 AI message,  user can dismiss after reading.
-//   Stage 2 → second interrupt.   ~5 exchanges,  user must engage to dismiss.
-//   Stage 3 → third interrupt.    ~15 exchanges, full conversation required.
-//   Stage 4 → hard block.         No dismiss. One final AI roast. Tab is done.
-//
-//   The scroll gaps BETWEEN stages shrink each time:
-//     Gap to stage 1:  base * 1.0   (e.g. 8 scrolls)
-//     Gap to stage 2:  base * 0.6   (e.g. 5 scrolls)
-//     Gap to stage 3:  base * 0.35  (e.g. 3 scrolls)
-//     Gap to stage 4:  base * 0.25  (e.g. 2 scrolls)
-//
-//   "base" is controlled by task urgency from content.js —
-//   the closer your deadline, the smaller the base, and
-//   ALL stages come faster.
+//ai.js
+//AI-powered escalation system for WEBE.
+//Loaded BEFORE content.js in the manifest so all functions
+//here are available on `window` for content.js to call.
+////WHAT THIS FILE DOES:
+//  1. Defines the escalation stage system (non-linear)
+//  2. Builds personality-aware system prompts for Gemini
+//  3. Calls the Gemini REST API via raw fetch()
+//  4. Renders a chat-style overlay where the AI guilt-trips
+//     the user into closing the app
+//  5. At the final stage, hard-blocks with an AI farewell roast
+////HOW ESCALATION WORKS (non-linear):
+//  Stage 1 → first interrupt.    1 AI message,  user can dismiss after reading.
+//  Stage 2 → second interrupt.   ~5 exchanges,  user must engage to dismiss.
+//  Stage 3 → third interrupt.    ~15 exchanges, full conversation required.
+//  Stage 4 → hard block.         No dismiss. One final AI roast. Tab is done.
+////  The scroll gaps BETWEEN stages shrink each time:
+//    Gap to stage 1:  base * 1.0   (e.g. 8 scrolls)
+//    Gap to stage 2:  base * 0.6   (e.g. 5 scrolls)
+//    Gap to stage 3:  base * 0.35  (e.g. 3 scrolls)
+//    Gap to stage 4:  base * 0.25  (e.g. 2 scrolls)
+////  "base" is controlled by task urgency from content.js —
+//  the closer your deadline, the smaller the base, and
+//  ALL stages come faster.
 // 
 
 (() => {
 
   // CONFIG 
+    const GEMINI_API_KEY = 'Insert-API-Key-Here';
 
-  // Set your Gemini API key here. Chrome MV3 extensions load JS files
-  // directly 
-  const GEMINI_API_KEY = 'AIzaSyBDA-AhLYIVkyUlaZUPCmmTTwJpCVdbn6o';
-
-  // Gemini model to use
   const GEMINI_MODEL = 'gemini-3-flash-preview';
 
 
 
-  // PERSONALITIES 
-  // Each personality has a name (for display), a base system prompt
-  // fragment, and tone escalation hints per stage.
+  //PERSONALITIES 
+  //has a base system prompt fragment and tone escalation hints per stage.
 
   const PERSONALITIES = [
     {
@@ -64,7 +55,7 @@
       stages: {
         1: 'Start with "honey" but quickly pivot to concern.',
         2: 'Bring up how hard you worked to give them opportunities.',
-        3: 'Full guilt mode. "I didn\'t come to this country for you to watch reels." Be dramatic.',
+        3: 'Full guilt mode. "I didn\'t give birth to you for you to watch reels." Be dramatic.',
         4: 'Silent treatment energy. One devastating line.'
       }
     },
@@ -104,18 +95,10 @@
   ];
 
 
-  // -------------------- ESCALATION STAGES --------------------
-  //
-  // scrollGapMultiplier: multiplied by a "base gap" (from content.js
-  //   urgency calc) to get the number of scrolls before THIS stage
-  //   triggers. The multipliers DECREASE → gaps shrink → interrupts
-  //   come faster. That's the non-linear part.
-  //
-  // maxExchanges: how many back-and-forth messages (user + AI = 1
-  //   exchange) the user must sit through before they can dismiss.
-  //   Stage 1 has 0 exchanges — just an AI message + dismiss button.
-  //
-  // hardBlock: if true, no dismiss at all. Game over.
+  //ESCALATION STAGES
+  //scrollGapMultiplier: multiplied by a "base gap" (from content.js urgency calc) to get the number of scrolls before this stagetriggers.
+  //maxExchanges: how many back-and-forth messages the user must sit through before they can dismiss.
+  //hardBlock: if true, no dismiss at all.
 
   const ESCALATION_STAGES = [
     { stage: 1, scrollGapMultiplier: 1.0,  maxExchanges: 0,  hardBlock: false },
@@ -125,17 +108,16 @@
   ];
 
 
-  // -------------------- ESCALATION STATE --------------------
-  // Tracks where the user is in the escalation sequence for
-  // this browsing session. Resets on page reload / tab close.
+  //ESCALATION STATE
+  //Tracks where the user is in the escalation sequence for this browsing session. Resets on page reload / tab close.
 
-  let currentEscalationIndex = 0;  // index into ESCALATION_STAGES (0-3)
-  let scrollsSinceLastStage  = 0;  // scrolls accumulated since last interrupt
-  let activePersonality      = null; // picked once on first interrupt, stays for session
-  let chatHistory            = [];   // conversation history for current overlay
+  let currentEscalationIndex = 0;  //index into ESCALATION_STAGES (0-3)
+  let scrollsSinceLastStage  = 0;  //scrolls accumulated since last interrupt
+  let activePersonality      = null; //picked once on first interrupt, stays for session
+  let chatHistory            = [];   //conversation history for current overlay
 
-  // Personality preference — loaded from storage, updated on change
-  let storedPersonalityName  = null; // null = Random
+  // Personality preference
+  let storedPersonalityName  = null; //null = Random
 
   chrome.storage.local.get(['webePersonality'], (data) => {
     storedPersonalityName = data.webePersonality || null;
@@ -143,53 +125,36 @@
 
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.webePersonality) {
-      storedPersonalityName = changes.webePersonality.newValue || null;
-      // Reset so next session picks the new choice
+      storedPersonalityName = changes.webePersonality.newValue || null;   //Reset so next session picks the new choice
       activePersonality = null;
     }
   });
 
 
-  // -------------------- PUBLIC: getEscalationAction --------------------
-  //
-  // Called by content.js on every scroll (instead of the old threshold check).
-  //
-  // Arguments:
-  //   baseGap    — the "base" number of scrolls between interrupts, computed
-  //                by content.js from task urgency / difficulty / bedtime.
-  //                Example: if the soonest task is 48h away, baseGap might be 12.
-  //                If it's 2h away, baseGap might be 5.
-  //   minScrolls — the absolute minimum scrolls between ANY two interrupts.
-  //                Passed from content.js's MIN_SCROLLS constant (default 5).
-  //                This prevents later stages from firing after only 2 scrolls
-  //                which feels like "every scroll."
-  //
-  // Returns:
-  //   null        — not time to interrupt yet, keep scrolling
-  //   { stage, personality, hardBlock, maxExchanges }
-  //               — time to interrupt! content.js should call showChatOverlay()
-  //                 or showHardBlockAI() depending on hardBlock.
+  //PUBLIC: getEscalationStage
+
+  //Called by content.js on every scroll (instead of the old threshold check).
+
+  //Arguments:
+  //  baseGap - the "base" number of scrolls between interrupts, computed by content.js
+  //smaller = more interuptions
 
   window.getEscalationAction = function (baseGap) {
     scrollsSinceLastStage++;
 
-    // Already past all stages → stay hard-blocked (shouldn't reach here
-    // since hard block has no dismiss, but just in case)
+    //Already past all stages so stay hard-blocked (shouldn't reach here since hard block has no dismiss, but just in case)
     if (currentEscalationIndex >= ESCALATION_STAGES.length) return null;
 
     const stageDef = ESCALATION_STAGES[currentEscalationIndex];
 
-    // The scroll threshold for THIS stage:
-    //   baseGap (from urgency) × this stage's multiplier, floored to at least 3.
-    //   Floor of 3 prevents late stages from collapsing to 1-2 scrolls even
-    //   at maximum urgency — keeps the non-linear feel meaningful.
-    const scrollThreshold = Math.max(3, Math.floor(baseGap * stageDef.scrollGapMultiplier));
+    //The scroll threshold for THIS stage:
+    const scrollThreshold = Math.max(2, Math.floor(baseGap * stageDef.scrollGapMultiplier));
 
     if (scrollsSinceLastStage < scrollThreshold) return null;
 
-    // --- Threshold reached: trigger this stage ---
+    //Threshold reached: trigger this stage
 
-    // Pick a personality on first interrupt (stays for entire session)
+    //Pick a personality on first interrupt (stays for entire session)
     if (!activePersonality) {
       const found = storedPersonalityName
         ? PERSONALITIES.find(p => p.name === storedPersonalityName)
@@ -197,7 +162,7 @@
       activePersonality = found || PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)];
     }
 
-    // Reset counter and advance to next stage for next time
+    //Reset counter and advance to next stage for next time
     scrollsSinceLastStage = 0;
     currentEscalationIndex++;
 
@@ -210,27 +175,25 @@
   };
 
 
-  // -------------------- PUBLIC: resetEscalation --------------------
-  // Called if the user navigates away from reels/shorts back to
-  // home, giving them a soft reset. Or on surface change.
+  //PUBLIC: resetEscalation
+  //Called if the user navigates away from reels/shorts back to home, giving them a soft reset or on surface change.
 
   window.resetEscalation = function () {
     currentEscalationIndex = 0;
     scrollsSinceLastStage  = 0;
-    // activePersonality is NOT reset, same character follows
-    // you for the whole session. Only a full page reload picks a new one.
+    //NOTE: activePersonality is NOT reset - same character follows
+    //you for the whole session. Only a full page reload picks a new one.
     chatHistory = [];
   };
 
 
- //PROMPT BUILDER
-  // Constructs the system instruction string sent to Gemini.
-  //
-  // Arguments:
-  //   stage       — 1-4, which escalation stage we're at
-  //   personality — one of the PERSONALITIES objects
-  //   taskInfo    — { name, due, hoursLeft, progress } from content.js
-  //   exchangeCount — how many exchanges have happened so far in this overlay
+  //buildSystemPrompt
+  //Constructs the system instruction string sent to Gemini.
+  //Arguments:
+  //  stage       — 1-4, which escalation stage we're at
+  //  personality — one of the PERSONALITIES objects
+  //  taskInfo    — { name, due, hoursLeft, progress } from content.js
+  //  exchangeCount — how many exchanges have happened so far in this overlay
 
   function buildSystemPrompt(stage, personality, taskInfo, exchangeCount) {
     const stageHint = personality.stages[stage] || '';
@@ -250,25 +213,24 @@
     }
 
     return [
-      // Identity
+      //Identity
       personality.base,
       '',
-      // Context
+      //Context
       `The user is currently doom-scrolling on social media instead of working.`,
       `Their most urgent task is: "${taskInfo.name}" — ${urgencyDesc}.`,
       taskInfo.progress > 0
         ? `They've completed about ${taskInfo.progress}% of this task.`
         : `They haven't started this task yet.`,
       '',
-      // Stage behavior
+      //Stage behavior
       `ESCALATION STAGE: ${stage}/4. ${stageHint}`,
       '',
-      // Conversation position
+      //Conversation position
       exchangeCount > 0
         ? `This is message ${exchangeCount + 1} in your conversation. Build on what was said.`
         : `This is your opening message. Hit hard right away.`,
       '',
-      // Rules
       `RULES:`,
       `- Keep responses to 1-2 sentences MAX. Ultra short and punchy.`,
       `- Stay in character at all times. Never break the fourth wall.`,
@@ -282,17 +244,16 @@
   }
 
 
-  // -------------------- callGemini --------------------
+  //call Gemini
+
+  //Makes a raw fetch() call to the Gemini REST API.
+  //Arguments:
+  //  conversationHistory: array of { role: 'user'|'model', text: string }
+  //  systemPrompt: the full system instruction string
   //
-  // Makes a raw fetch() call to the Gemini REST API.
-  //
-  // Arguments:
-  //   conversationHistory — array of { role: 'user'|'model', text: string }
-  //   systemPrompt        — the full system instruction string
-  //
-  // Returns:
-  //   string — the AI's response text
-  //   Throws on network/API error.
+  //Returns:
+  //  the AI's response text
+  //  Throws on network/API error.
 
   // callGeminiStream — streams the Gemini response via SSE, calling onChunk
   // with each text fragment as it arrives. Returns the full response string.
@@ -354,28 +315,27 @@
   }
 
 
-  // -------------------- showChatOverlay --------------------
-  //
+  //showChatOverlay
+
   // The main AI overlay. Called by content.js when getEscalationAction()
   // returns a non-hardBlock stage.
   //
-  // Arguments:
-  //   stage        — 1-4
-  //   personality  — one of the PERSONALITIES objects
-  //   taskInfo     — { name, due, hoursLeft, progress }
-  //   onDismiss    — callback function content.js passes in so it can
-  //                  clean up overlayActive state, track minutes saved, etc.
+  //Arguments:
+  //  stage: 1-4
+  //  personality: one of the PERSONALITIES objects
+  //  taskInfo: { name, due, hoursLeft, progress }
+  //  onDismiss: callback function content.js passes in so it can clean up overlayActive state, track minutes saved, etc.
 
   window.showChatOverlay = async function (stage, personality, taskInfo, onDismiss) {
     chatHistory = [];
     let exchangeCount = 0;
     const maxExchanges = ESCALATION_STAGES[stage - 1].maxExchanges;
 
-    // --- Build DOM ---
+    //Build DOM
     const overlay = document.createElement('div');
     overlay.id = 'webe-overlay';
 
-    // Stage indicator dots (filled up to current stage)
+    //Stage indicator dots (filled up to current stage)
     const stageDots = [1, 2, 3, 4].map(s =>
       `<span class="webe-stage-dot ${s <= stage ? 'active' : ''}"></span>`
     ).join('');
@@ -426,23 +386,23 @@
     document.documentElement.appendChild(overlay);
     document.body.style.overflow = 'hidden';
 
-    // --- Element refs ---
+    //Element refs
     const messagesEl = overlay.querySelector('#webe-chat-messages');
     const inputEl    = overlay.querySelector('#webe-chat-input');
     const sendBtn    = overlay.querySelector('#webe-chat-send');
     const dismissBtn = overlay.querySelector('#webe-chat-dismiss');
 
-    // --- Helper: add a message bubble to the chat ---
+    //Helper: add a message bubble to the chat
     function addBubble(text, sender) {
       const bubble = document.createElement('div');
       bubble.className = `webe-bubble webe-bubble-${sender}`;
       bubble.textContent = text;
       messagesEl.appendChild(bubble);
-      // Auto-scroll to bottom
+      //Auto-scroll to bottom
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    // --- Helper: show typing indicator ---
+    //Helper: show typing indicator
     function showTyping() {
       const el = document.createElement('div');
       el.className = 'webe-bubble webe-bubble-ai webe-typing';
@@ -457,10 +417,10 @@
       if (el) el.remove();
     }
 
-    // --- Helper: check if conversation cap is reached ---
+    //Helper: check if conversation cap is reached
     function checkDismissable() {
       if (maxExchanges === 0) {
-        // Stage 1: dismiss available immediately after AI's first message
+        //Stage 1: dismiss available immediately after AI's first message
         dismissBtn.style.display = 'block';
         inputEl.parentElement.style.display = 'none';
       } else if (exchangeCount >= maxExchanges) {
@@ -469,7 +429,7 @@
       }
     }
 
-    // --- Helper: get AI response (streaming) ---
+    //Helper: get AI response
     async function getAIResponse() {
       const prompt = buildSystemPrompt(stage, personality, taskInfo, exchangeCount);
       showTyping();
@@ -492,12 +452,12 @@
         const fallback = getFallbackMessage(stage, personality, taskInfo);
         chatHistory.push({ role: 'model', text: fallback });
         addBubble(fallback, 'ai');
-        // Fallbacks are static — can't support a real back-and-forth conversation.
-        // Force dismiss available immediately so the user isn't stuck.
+        //Fallbacks are static, can't support a real back-and-forth conversation.
+        //Force dismiss available immediately so the user isn't stuck.
         exchangeCount = maxExchanges;
         console.error('[WEBE] Gemini API error:', err);
 
-        // Auto-dismiss countdown
+        //Auto-dismiss countdown
         const countdownEl = document.createElement('div');
         countdownEl.id = 'webe-fallback-countdown';
         messagesEl.appendChild(countdownEl);
@@ -516,7 +476,7 @@
       checkDismissable();
     }
 
-    // --- Helper: handle user sending a message ---
+    //Helper: handle user sending a message
     async function handleSend() {
       const text = inputEl.value.trim();
       if (!text) return;
@@ -526,13 +486,13 @@
       chatHistory.push({ role: 'user', text: text });
       exchangeCount++;
 
-      // Disable input while AI responds
+      //Disable input while AI responds
       inputEl.disabled = true;
       sendBtn.disabled = true;
 
       await getAIResponse();
 
-      // Re-enable input (if not past cap)
+      //Re-enable input (if not past cap)
       if (exchangeCount < maxExchanges || maxExchanges === 0) {
         inputEl.disabled = false;
         sendBtn.disabled = false;
@@ -540,7 +500,7 @@
       }
     }
 
-    // --- Wire events ---
+    //Wire events
     sendBtn.addEventListener('click', handleSend);
     inputEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') handleSend();
@@ -555,26 +515,26 @@
       if (onDismiss) onDismiss();
     });
 
-    // --- Progress bar ---
+    //Progress bar
     overlay.querySelector('#webe-task-progress').addEventListener('click', (e) => {
       const seg = e.target.closest('.webe-pb-seg');
       if (!seg) return;
       const n = Number(seg.dataset.n);
 
-      // Update visual fill
+      //Update visual fill
       overlay.querySelectorAll('.webe-pb-seg').forEach(s => {
         s.classList.toggle('webe-pb-filled', Number(s.dataset.n) <= n);
       });
 
       if (n === 10) {
-        // Mark complete: delete task from storage, then dismiss
+        //Mark complete: delete task from storage, then dismiss
         chrome.storage.local.get(['tasks'], (data) => {
           const updated = (data.tasks || []).filter(t => t.id !== taskInfo.id);
           chrome.storage.local.set({ tasks: updated });
         });
         dismissBtn.click();
       } else {
-        // Update progress in storage, keep overlay open
+        //Update progress in storage, keep overlay open
         const newProgress = n * 10;
         chrome.storage.local.get(['tasks'], (data) => {
           const updated = (data.tasks || []).map(t =>
@@ -585,10 +545,9 @@
       }
     });
 
-    //  Kick off: AI sends the opening message 
-    // For the opening message, we add a synthetic user message so
-    // Gemini has something to respond to (the API requires the
-    // conversation to start with a user).
+    //Kick off: AI sends the opening message
+    //For the opening message, we add a synthetic user message so Gemini has something to 
+    //respond to (the API requires the conversation to start with a user turn)
     chatHistory.push({
       role: 'user',
       text: '(The user just opened social media and has been scrolling through reels.)'
@@ -596,22 +555,21 @@
 
     await getAIResponse();
 
-    // Focus input for immediate typing (if stage allows it)
+    //Focus input for immediate typing (if stage allows it)
     if (maxExchanges > 0) {
       inputEl.focus();
     }
   };
 
 
-  //  showHardBlockAI 
-  //
-  // Stage 4: full block. One final AI-generated roast, no dismiss button.
-  // Called by content.js when getEscalationAction() returns hardBlock: true.
+  //showHardBlockAI
+
+  //Stage 4: full block. One final AI-generated roast, no dismiss button. Called by content.js when getEscalationAction() returns hardBlock: true.
 
   window.showHardBlockAI = async function (personality, taskInfo) {
     chatHistory = [];
 
-    // Get one devastating final message from the AI
+    //Get one devastating final message from the AI
     const prompt = buildSystemPrompt(4, personality, taskInfo, 0);
 
     let finalMessage;
@@ -647,13 +605,12 @@
     document.documentElement.appendChild(style);
     document.documentElement.appendChild(overlay);
     document.body.style.overflow = 'hidden';
-    // No dismiss handler — intentionally permanent until tab close
+    //No dismiss handler, intentionally permanent until tab close
   };
 
 
-  // -------------------- Fallback messages --------------------
-  // Used when the Gemini API is unreachable (no key, rate limit, etc.)
-  // so the overlay still works without AI.
+  //Fallback messages
+  //Used when the Gemini API is unreachable (no key, rate limit, etc.) so the overlay still works without AI.
 
   function getFallbackMessage(stage, personality, taskInfo) {
     const name = taskInfo.name;
@@ -679,13 +636,13 @@
       'Drill Sergeant': [
         `DROP THE PHONE. "${name}." GO.`,
         `DID I STUTTER? "${name}" — that's your mission objective, RECRUIT.`,
-        `15 EXCHANGES AND YOU'RE STILL HERE? "${name}" — MOVE IT OR LOSE IT.`,
+        `YOU'RE STILL HERE? "${name}" — MOVE IT OR LOSE IT.`,
         `DISHONORABLE DISCHARGE. "${name}" was your ONE JOB. Pathetic.`
       ],
       'Therapist': [
         `I notice you're scrolling instead of working on "${name}." What do you think that's about?`,
         `We've talked about avoidance patterns before. "${name}" is triggering something. What is it?`,
-        `You're dozens of reels deep, avoiding "${name}." At what point does this stop being relaxation and start being self-sabotage?`,
+        `You're still avoiding "${name}." At what point does this stop being relaxation and start being self-sabotage?`,
         `I think we both know what you need to do about "${name}." The question is whether you'll choose yourself today.`
       ]
     };
@@ -695,7 +652,7 @@
   }
 
 
-  // -------------------- Utility --------------------
+  //Utility
 
   function escapeHtml(str) {
     const d = document.createElement('span');
@@ -704,9 +661,8 @@
   }
 
 
-  // -------------------- CSS --------------------
-  // All styles scoped under #webe-overlay so they don't
-  // bleed into the host page.
+  //CSS
+  // All styles scoped under #webe-overlay so they don't bleed into the host page.
 
   const CHAT_OVERLAY_CSS = `
     #webe-overlay {
