@@ -34,13 +34,13 @@
 
   // Set your Gemini API key here. Chrome MV3 extensions load JS files
   // directly 
-  const GEMINI_API_KEY = 'YOUR-GEMINI-API-KEY';
+  const GEMINI_API_KEY = 'AIzaSyDW7J4tz9eW2exgWiEIbJREGZWgFUkiAVU';
 
   // Gemini model to use
   const GEMINI_MODEL = 'gemini-3-flash-preview';
 
   // Gemini REST endpoint (key goes as query param)
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
 
 
   // PERSONALITIES 
@@ -650,13 +650,13 @@
       'Drill Sergeant': [
         `DROP THE PHONE. "${name}." GO.`,
         `DID I STUTTER? "${name}" — that's your mission objective, RECRUIT.`,
-        `15 EXCHANGES AND YOU'RE STILL HERE? "${name}" — MOVE IT OR LOSE IT.`,
+        `YOU'RE STILL HERE? "${name}" — MOVE IT OR LOSE IT.`,
         `DISHONORABLE DISCHARGE. "${name}" was your ONE JOB. Pathetic.`
       ],
       'Therapist': [
         `I notice you're scrolling instead of working on "${name}." What do you think that's about?`,
         `We've talked about avoidance patterns before. "${name}" is triggering something. What is it?`,
-        `You're 15 messages deep in avoiding "${name}." At what point does this stop being relaxation and start being self-sabotage?`,
+        `You're still avoiding "${name}." At what point does this stop being relaxation and start being self-sabotage?`,
         `I think we both know what you need to do about "${name}." The question is whether you'll choose yourself today.`
       ]
     };
