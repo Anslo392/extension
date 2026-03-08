@@ -446,6 +446,37 @@
       color: #555;
       cursor: not-allowed;
     }
+
+    #personality-select {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 12px;
+      padding: 4px 8px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    #personality-select:focus { border-color: #4ade80; }
+
+    .urgency-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .urgency-lbl {
+      font-size: 10px;
+      color: #666;
+      white-space: nowrap;
+    }
+
+    #urgency-slider {
+      width: 90px;
+      accent-color: #4ade80;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -538,6 +569,25 @@
   <div class="toggle-row">
     <label>Bedtime</label>
     <input type="time" id="bedtime-input" value="23:00" />
+  </div>
+  <div class="toggle-row">
+    <label>AI Personality</label>
+    <select id="personality-select">
+      <option value="Random">🎲 Random</option>
+      <option value="Disappointed Friend">😔 Friend</option>
+      <option value="Angry Mom">👩 Mom</option>
+      <option value="Deceitful Girlfriend">💀 GF</option>
+      <option value="Drill Sergeant">🪖 Sergeant</option>
+      <option value="Therapist">🧠 Therapist</option>
+    </select>
+  </div>
+  <div class="toggle-row">
+    <label>Interrupt rate</label>
+    <div class="urgency-wrap">
+      <span class="urgency-lbl">Chill</span>
+      <input type="range" id="urgency-slider" min="1" max="4" step="1" value="2" />
+      <span class="urgency-lbl">Max</span>
+    </div>
   </div>
 
   <script src="popup.js"></script>

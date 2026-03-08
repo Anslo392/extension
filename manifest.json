@@ -20,7 +20,7 @@
         "*://*.tiktok.com/*",
         "*://*.youtube.com/*"
       ],
-      "js": ["content.js"],
+      "js": ["ai.js", "content.js"],
       "run_at": "document_idle"
     }
   ]

@@ -16,7 +16,9 @@ const addForm        = document.getElementById('add-form');
 const surveyPanel    = document.getElementById('survey-panel');
 const surveyPreview  = document.getElementById('survey-task-preview');
 const surveyConfirm  = document.getElementById('survey-confirm');
-const bedtimeInput   = document.getElementById('bedtime-input');
+const bedtimeInput        = document.getElementById('bedtime-input');
+const personalitySelect   = document.getElementById('personality-select');
+const urgencySlider       = document.getElementById('urgency-slider');
 const scheduleListEl = document.getElementById('schedule-list');
 const addFreeBtn     = document.getElementById('add-free-block');
 const freeBlockForm  = document.getElementById('free-block-form');
@@ -429,6 +431,14 @@ async function deleteTask(id) {
   const bedtimeVal = savedBedtime || '23:00';
   bedtimeInput.value = bedtimeVal;
   if (!savedBedtime) chrome.storage.local.set({ bedtime: bedtimeVal });
+
+  // Load personality
+  const { webePersonality } = await chrome.storage.local.get(['webePersonality']);
+  personalitySelect.value = webePersonality || 'Random';
+
+  // Load urgency level (1=Chill … 4=Max), default 2 (Normal)
+  const { urgencyLevel } = await chrome.storage.local.get(['urgencyLevel']);
+  urgencySlider.value = urgencyLevel ?? 2;
 })();
 
 // tab switching 
@@ -481,6 +491,15 @@ toggleActive.addEventListener('change', async () => {
 
 bedtimeInput.addEventListener('change', () => {
   chrome.storage.local.set({ bedtime: bedtimeInput.value });
+});
+
+personalitySelect.addEventListener('change', () => {
+  const val = personalitySelect.value;
+  chrome.storage.local.set({ webePersonality: val === 'Random' ? null : val });
+});
+
+urgencySlider.addEventListener('input', () => {
+  chrome.storage.local.set({ urgencyLevel: Number(urgencySlider.value) });
 });
 
 // Free block form
