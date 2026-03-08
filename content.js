@@ -527,6 +527,12 @@
         <div id="webe-prompt">What have you done to get closer to:</div>
         <div id="webe-task-name">${escapeHtml(urgentTask.name)}</div>
         <div id="webe-due">${formatDue(urgentTask.effectiveDue ? urgentTask.effectiveDue.toISOString() : urgentTask.due)}</div>
+        <div id="webe-progress-label">Update progress — tap a segment to save &amp; continue</div>
+        <div id="webe-progress-bar">${
+          [1,2,3,4,5,6,7,8,9,10].map(n =>
+            `<span class="webe-pb-seg${((urgentTask.progress ?? 0) / 10) >= n ? ' webe-pb-filled' : ''}" data-n="${n}"></span>`
+          ).join('')
+        }</div>
         <textarea id="webe-input" placeholder="Type what you've done (or what you'll do next)..." rows="3"></textarea>
         <button id="webe-dismiss">I'm on it →</button>
         <div id="webe-skip">or <span id="webe-skip-link">mark task as done</span></div>
@@ -669,6 +675,32 @@
         color: #888;
         margin-top: 2px;
       }
+
+      #webe-progress-label {
+        font-size: 11px;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 8px;
+      }
+
+      #webe-progress-bar {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 16px;
+      }
+
+      .webe-pb-seg {
+        flex: 1;
+        height: 8px;
+        background: #2a2a2a;
+        border-radius: 3px;
+        cursor: pointer;
+        transition: background 0.1s, transform 0.1s;
+      }
+
+      .webe-pb-seg:hover { background: #22c55e; transform: scaleY(1.3); }
+      .webe-pb-filled    { background: #4ade80; }
     `;
 
     document.documentElement.appendChild(style);
@@ -676,6 +708,40 @@
 
     // Prevent scrolling underneath
     document.body.style.overflow = 'hidden';
+
+    // Wire up progress bar segments
+    overlay.querySelector('#webe-progress-bar').addEventListener('click', (e) => {
+      const seg = e.target.closest('.webe-pb-seg');
+      if (!seg) return;
+      const n = Number(seg.dataset.n);
+
+      // Save check-in text alongside the progress update
+      const inputText = overlay.querySelector('#webe-input').value.trim();
+      if (inputText) {
+        chrome.storage.local.set({
+          lastCheckIn: { text: inputText, timestamp: Date.now(), taskId: urgentTask.id }
+        });
+      }
+
+      if (n === 10) {
+        // 10/10 → complete: delete task and clear check-in
+        chrome.storage.local.get(['tasks'], (data) => {
+          const updated = (data.tasks || []).filter(t => t.id !== urgentTask.id);
+          chrome.storage.local.set({ tasks: updated });
+        });
+        chrome.storage.local.remove('lastCheckIn');
+      } else {
+        // Save progress (storage change triggers recalcThreshold → more scrolls via progMult)
+        chrome.storage.local.get(['tasks'], (data) => {
+          const updated = (data.tasks || []).map(t =>
+            t.id === urgentTask.id ? { ...t, progress: n * 10 } : t
+          );
+          chrome.storage.local.set({ tasks: updated });
+        });
+      }
+
+      dismiss(overlay, style, overlayStartTime);
+    });
 
     // Wire up dismiss
     overlay.querySelector('#webe-dismiss').addEventListener('click', () => {
