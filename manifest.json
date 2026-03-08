@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Reflexive",
+  "name": "WEBE - What Even BE productive",
   "version": "1.0.0",
   "description": "Interrupts doom-scrolling with task accountability prompts",
   "permissions": ["storage", "activeTab"],
