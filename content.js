@@ -222,7 +222,7 @@
       return;
     }
 
-    const action = window.getEscalationAction(threshold);
+    const action = window.getEscalationAction(threshold, MIN_SCROLLS);
     if (!action) return; // not time yet
 
     recalcThreshold();

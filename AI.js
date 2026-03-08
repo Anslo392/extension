@@ -152,15 +152,19 @@
   });
 
 
-  // -------------------- PUBLIC: getEscalationStage --------------------
+  // -------------------- PUBLIC: getEscalationAction --------------------
   //
   // Called by content.js on every scroll (instead of the old threshold check).
   //
   // Arguments:
-  //   baseGap — the "base" number of scrolls between interrupts, computed
-  //             by content.js from task urgency / difficulty / bedtime.
-  //             Example: if the soonest task is 48h away, baseGap might be 12.
-  //             If it's 2h away, baseGap might be 3.
+  //   baseGap    — the "base" number of scrolls between interrupts, computed
+  //                by content.js from task urgency / difficulty / bedtime.
+  //                Example: if the soonest task is 48h away, baseGap might be 12.
+  //                If it's 2h away, baseGap might be 5.
+  //   minScrolls — the absolute minimum scrolls between ANY two interrupts.
+  //                Passed from content.js's MIN_SCROLLS constant (default 5).
+  //                This prevents later stages from firing after only 2 scrolls
+  //                which feels like "every scroll."
   //
   // Returns:
   //   null        — not time to interrupt yet, keep scrolling
@@ -168,7 +172,8 @@
   //               — time to interrupt! content.js should call showChatOverlay()
   //                 or showHardBlockAI() depending on hardBlock.
 
-  window.getEscalationAction = function (baseGap) {
+  window.getEscalationAction = function (baseGap, minScrolls) {
+    minScrolls = minScrolls || 5; // fallback if not passed
     scrollsSinceLastStage++;
 
     // Already past all stages → stay hard-blocked (shouldn't reach here
@@ -178,8 +183,10 @@
     const stageDef = ESCALATION_STAGES[currentEscalationIndex];
 
     // The scroll threshold for THIS stage:
-    //   baseGap (from urgency) × this stage's multiplier, floored to at least 2
-    const scrollThreshold = Math.max(2, Math.floor(baseGap * stageDef.scrollGapMultiplier));
+    //   baseGap (from urgency) × this stage's multiplier, floored to minScrolls.
+    //   This ensures even the most aggressive stage can't interrupt faster
+    //   than every minScrolls scrolls.
+    const scrollThreshold = Math.max(minScrolls, Math.floor(baseGap * stageDef.scrollGapMultiplier));
 
     if (scrollsSinceLastStage < scrollThreshold) return null;
 
@@ -213,14 +220,13 @@
   window.resetEscalation = function () {
     currentEscalationIndex = 0;
     scrollsSinceLastStage  = 0;
-    // NOTE: activePersonality is NOT reset — same character follows
+    // activePersonality is NOT reset, same character follows
     // you for the whole session. Only a full page reload picks a new one.
     chatHistory = [];
   };
 
 
-  // -------------------- buildSystemPrompt --------------------
-  //
+ //PROMPT BUILDER
   // Constructs the system instruction string sent to Gemini.
   //
   // Arguments:
