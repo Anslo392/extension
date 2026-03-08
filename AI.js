@@ -34,13 +34,11 @@
 
   // Set your Gemini API key here. Chrome MV3 extensions load JS files
   // directly 
-  const GEMINI_API_KEY = 'YOUR-GEMINI-API-KEY';
+  const GEMINI_API_KEY = 'AIzaSyBDA-AhLYIVkyUlaZUPCmmTTwJpCVdbn6o';
 
   // Gemini model to use
   const GEMINI_MODEL = 'gemini-3-flash-preview';
 
-  // Gemini REST endpoint (key goes as query param)
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
 
   // PERSONALITIES 
@@ -121,8 +119,8 @@
 
   const ESCALATION_STAGES = [
     { stage: 1, scrollGapMultiplier: 1.0,  maxExchanges: 0,  hardBlock: false },
-    { stage: 2, scrollGapMultiplier: 0.6,  maxExchanges: 5,  hardBlock: false },
-    { stage: 3, scrollGapMultiplier: 0.35, maxExchanges: 15, hardBlock: false },
+    { stage: 2, scrollGapMultiplier: 0.6,  maxExchanges: 2,  hardBlock: false },
+    { stage: 3, scrollGapMultiplier: 0.35, maxExchanges: 3,  hardBlock: false },
     { stage: 4, scrollGapMultiplier: 0.25, maxExchanges: 0,  hardBlock: true  },
   ];
 
@@ -272,7 +270,7 @@
       '',
       // Rules
       `RULES:`,
-      `- Keep responses to 1-3 sentences MAX. Short and punchy.`,
+      `- Keep responses to 1-2 sentences MAX. Ultra short and punchy.`,
       `- Stay in character at all times. Never break the fourth wall.`,
       `- Never mention you're an AI, a language model, or that this is a browser extension.`,
       `- Reference the specific task name and deadline naturally.`,
@@ -296,26 +294,25 @@
   //   string — the AI's response text
   //   Throws on network/API error.
 
-  async function callGemini(conversationHistory, systemPrompt) {
-    // Convert our simple history format to Gemini's expected format:
-    //   contents: [ { role: 'user', parts: [{ text }] }, { role: 'model', parts: [{ text }] }, ... ]
+  // callGeminiStream — streams the Gemini response via SSE, calling onChunk
+  // with each text fragment as it arrives. Returns the full response string.
+  async function callGeminiStream(conversationHistory, systemPrompt, onChunk) {
     const contents = conversationHistory.map(msg => ({
       role: msg.role,
       parts: [{ text: msg.text }]
     }));
 
     const body = {
-      system_instruction: {
-        parts: [{ text: systemPrompt }]
-      },
-      contents: contents,
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents,
       generationConfig: {
-        maxOutputTokens: 150,  // short responses — 1-3 sentences
-        temperature: 1.0       // some creativity for personality
+        temperature: 1.0,
+        thinkingConfig: { thinkingBudget: 0 }  // 0 = no thinking phase, faster + full token budget for response
       }
     };
 
-    const response = await fetch(GEMINI_URL, {
+    const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
+    const response = await fetch(streamUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -326,16 +323,34 @@
       throw new Error(`Gemini API error ${response.status}: ${errText}`);
     }
 
-    const data = await response.json();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
 
-    // Gemini response structure:
-    //   data.candidates[0].content.parts[0].text
-    const parts = data?.candidates?.[0]?.content?.parts;
-    if (!parts || parts.length === 0) {
-      throw new Error('Empty response from Gemini');
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const json = line.slice(6).trim();
+        if (!json || json === '[DONE]') continue;
+        try {
+          const chunk = JSON.parse(json);
+          const parts = chunk?.candidates?.[0]?.content?.parts;
+          if (!parts) continue;
+          const text = parts.filter(p => !p.thought).map(p => p.text || '').join('');
+          if (text) { fullText += text; onChunk(text); }
+        } catch { /* skip malformed chunk */ }
+      }
     }
 
-    return parts.map(p => p.text).join('');
+    if (!fullText) throw new Error('Empty response from Gemini');
+    return fullText;
   }
 
 
@@ -454,15 +469,24 @@
       }
     }
 
-    // --- Helper: get AI response ---
+    // --- Helper: get AI response (streaming) ---
     async function getAIResponse() {
       const prompt = buildSystemPrompt(stage, personality, taskInfo, exchangeCount);
       showTyping();
       try {
-        const aiText = await callGemini(chatHistory, prompt);
-        hideTyping();
+        let bubble = null;
+        const aiText = await callGeminiStream(chatHistory, prompt, (chunk) => {
+          if (!bubble) {
+            hideTyping();
+            bubble = document.createElement('div');
+            bubble.className = 'webe-bubble webe-bubble-ai';
+            messagesEl.appendChild(bubble);
+          }
+          bubble.textContent += chunk;
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        });
+        if (!bubble) hideTyping();
         chatHistory.push({ role: 'model', text: aiText });
-        addBubble(aiText, 'ai');
       } catch (err) {
         hideTyping();
         const fallback = getFallbackMessage(stage, personality, taskInfo);
@@ -561,10 +585,10 @@
       }
     });
 
-    // --- Kick off: AI sends the opening message ---
+    //  Kick off: AI sends the opening message 
     // For the opening message, we add a synthetic user message so
     // Gemini has something to respond to (the API requires the
-    // conversation to start with a user turn).
+    // conversation to start with a user).
     chatHistory.push({
       role: 'user',
       text: '(The user just opened social media and has been scrolling through reels.)'
@@ -579,7 +603,7 @@
   };
 
 
-  // -------------------- showHardBlockAI --------------------
+  //  showHardBlockAI 
   //
   // Stage 4: full block. One final AI-generated roast, no dismiss button.
   // Called by content.js when getEscalationAction() returns hardBlock: true.
@@ -650,7 +674,7 @@
         `It's fine that you're scrolling instead of doing "${name}." Totally fine.`,
         `My ex used to finish his work before scrolling. He did "${name}" type stuff in like an hour.`,
         `I showed my mom your screen time. She said I could do better. "${name}" is RIGHT THERE.`,
-        `We're done. "${name}" clearly matters more to you than I do. Bye.`
+        `We're done. "${name}" and your success clearly doesn't matter at all. Bye.`
       ],
       'Drill Sergeant': [
         `DROP THE PHONE. "${name}." GO.`,
@@ -661,7 +685,7 @@
       'Therapist': [
         `I notice you're scrolling instead of working on "${name}." What do you think that's about?`,
         `We've talked about avoidance patterns before. "${name}" is triggering something. What is it?`,
-        `You're 15 messages deep in avoiding "${name}." At what point does this stop being relaxation and start being self-sabotage?`,
+        `You're dozens of reels deep, avoiding "${name}." At what point does this stop being relaxation and start being self-sabotage?`,
         `I think we both know what you need to do about "${name}." The question is whether you'll choose yourself today.`
       ]
     };
